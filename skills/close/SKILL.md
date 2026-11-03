@@ -25,7 +25,7 @@ close version
 close schema
 ```
 
-Homebrew/Scoop require a published release. Binary archives and SHA-256
+Binary archives and SHA-256
 checksums: https://github.com/voska/close/releases.
 
 ## Credentials and setup
