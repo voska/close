@@ -87,7 +87,9 @@ func TestRedirectDoesNotForwardCredentials(t *testing.T) {
 	called := false
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true }))
 	defer target.Close()
-	c := fixture(t, func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, 307) })
+	c := fixture(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	})
 	if _, err := c.Do(context.Background(), "GET", "lead/", nil, nil, true); err == nil || called {
 		t.Fatalf("redirect followed: %v %v", called, err)
 	}

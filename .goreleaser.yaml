@@ -1,14 +1,17 @@
 version: 2
+project_name: close
 builds:
   - main: ./cmd/close
     binary: close
     env: [CGO_ENABLED=0]
+    flags: [-trimpath]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 archives:
   - name_template: "close_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md, CHANGELOG.md]
     format_overrides:
       - goos: windows
         formats: [zip]
@@ -16,5 +19,43 @@ checksum:
   name_template: checksums.txt
 changelog:
   sort: asc
+  filters:
+    exclude: ["^docs:", "^chore:", "^ci:", "^test:"]
+brews:
+  - name: close
+    skip_upload: auto
+    directory: Formula
+    homepage: "https://github.com/voska/close"
+    description: "Close CRM CLI for humans and AI agents"
+    license: MIT
+    repository:
+      owner: voska
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: voska-bot
+      email: bot@voska.dev
+    install: |
+      bin.install "close"
+      generate_completions_from_executable(bin/"close", "completion")
+    test: |
+      assert_equal version.to_s, shell_output("#{bin}/close version --quiet").strip
+      assert_equal "success", JSON.parse(shell_output("#{bin}/close schema exit-codes")).fetch("exit_codes").fetch("0")
+scoops:
+  - name: close
+    skip_upload: auto
+    homepage: "https://github.com/voska/close"
+    description: "Close CRM CLI for humans and AI agents"
+    license: MIT
+    repository:
+      owner: voska
+      name: scoop-bucket
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: voska-bot
+      email: bot@voska.dev
 release:
-  disable: true
+  github:
+    owner: voska
+    name: close
+  prerelease: auto

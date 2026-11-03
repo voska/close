@@ -60,11 +60,14 @@ with code, type, message, optional HTTP status and request ID.
 Go 1.25+, Cobra for the command tree, go-keyring for OS credentials, stdlib
 net/http, encoding/json and testing/httptest. Layout: cmd/close, internal/api,
 internal/cli, internal/auth, internal/output, internal/errfmt. Test synthetic
-HTTP fixtures before implementation, then `make ci` (format, vet, race tests,
+HTTP fixtures before implementation, then `make ci` (format, vet, pinned lint, race tests,
 coverage >=80% of internal packages, binary build) and a real executable smoke
-test. CI has read-only permissions and runs on hosted runners. GoReleaser
-configuration supports local cross-platform snapshots; public release tags,
-Homebrew changes and write-enabled release workflows are outside this change.
+test. PR and default-branch CI have read-only permissions and run on hosted
+runners, including cross-platform GoReleaser snapshots and package manifests.
+Tags run the full checks before a separate publishing job creates a GitHub
+release and stable tags update the shared Homebrew tap and Scoop bucket. Only that job
+has write permission and receives the package-repository credential. Builds
+use Go 1.27.3 while retaining Go 1.25 source compatibility.
 
 Sources checked 2026-11-03: [overview](https://developer.close.com/api/overview),
 [pagination](https://developer.close.com/api/overview/pagination),

@@ -40,7 +40,7 @@ func New(origin, secret string, bearer bool, timeout time.Duration) (*Client, er
 	}
 	ip := net.ParseIP(u.Hostname())
 	loopback := ip != nil && ip.IsLoopback()
-	if origin != DefaultURL && !(loopback && u.Scheme == "http" && u.Path == "/api/v1/") {
+	if origin != DefaultURL && (!loopback || u.Scheme != "http" || u.Path != "/api/v1/") {
 		return nil, errfmt.New(10, "configuration", "API origin must be %s or an HTTP loopback IP with /api/v1/", DefaultURL)
 	}
 	if timeout <= 0 {
