@@ -10,9 +10,6 @@ with or endorsed by Close.
 
 ## Install
 
-Homebrew and Scoop installation require a published release. Source installation
-works before the first release.
-
 Homebrew (macOS and Linux):
 
 ```sh
@@ -256,8 +253,8 @@ The dependency-free docs site lives in `site/`, deployed to
 `https://voska.github.io/close/` through `.github/workflows/pages.yml` on
 `master` changes to the site or skill. The workflow copies `skills/close/` to
 `/close/skill/`, so the published skill and references match the repository.
-There is no custom domain or publishing secret. Enable GitHub Pages with
-GitHub Actions as its source before the first deployment.
+There is no custom domain or publishing secret. GitHub Pages uses GitHub Actions
+as its publishing source.
 
 [Build contract](SPEC.md) · [Contributor instructions](AGENTS.md) ·
 [Close API docs](https://developer.close.com/api/overview)

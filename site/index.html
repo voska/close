@@ -43,7 +43,7 @@
     "@context": "https://schema.org", "@type": "FAQPage",
     "mainEntity": [
       {"@type":"Question","name":"Is close an official Close product?","acceptedAnswer":{"@type":"Answer","text":"No. close is an independent open-source CLI, not affiliated with or endorsed by Close."}},
-      {"@type":"Question","name":"How do I install close?","acceptedAnswer":{"@type":"Answer","text":"Use brew install voska/tap/close on macOS or Linux after a release is published. Scoop and binary archives are available for releases; source installation uses go install github.com/voska/close/cmd/close@latest with Go 1.25 or newer."}},
+      {"@type":"Question","name":"How do I install close?","acceptedAnswer":{"@type":"Answer","text":"Use brew install voska/tap/close on macOS or Linux, or Scoop on Windows. Binary archives with SHA-256 checksums are on GitHub Releases. Source installation uses go install github.com/voska/close/cmd/close@latest with Go 1.25 or newer."}},
       {"@type":"Question","name":"Can AI agents use close?","acceptedAnswer":{"@type":"Answer","text":"JSON is the default, errors are JSON on stderr, all commands are noninteractive, and close schema exposes commands and flags. The repository ships an agent skill and the site includes llms.txt."}},
       {"@type":"Question","name":"What does exit 9 mean?","acceptedAnswer":{"@type":"Answer","text":"Submitted, unverified or write outcome unknown. Inspect the stored state before retrying. Email and SMS read-back verifies record or queue state, not delivery. Authenticated live Close behavior has not been verified."}}
     ]
@@ -153,7 +153,6 @@
           <button type="button" id="copy-install" hidden aria-label="Copy Homebrew install command">Copy</button>
         </div>
       </div>
-      <p class="caption">Homebrew and Scoop require a published release.</p>
       <div class="install-links">
         <a href="#scoop">Windows: Scoop</a>
         <a href="#source">Any OS: Go</a>

@@ -9,7 +9,7 @@
 - Scoop (Windows): `scoop bucket add voska https://github.com/voska/scoop-bucket`, then `scoop install close`
 - Source (Go 1.25+): `go install github.com/voska/close/cmd/close@latest`
 - Binary archives and SHA-256 checksums: https://github.com/voska/close/releases
-- Homebrew and Scoop require a published release. Check installation with `close version`.
+- Check installation with `close version`.
 
 ## Start here
 
