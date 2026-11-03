@@ -6,15 +6,67 @@ with or endorsed by Close.
 
 ## Install
 
-Requires Go 1.25 or newer:
+Homebrew and Scoop installation require a published release. Source installation
+works before the first release.
+
+Homebrew (macOS and Linux):
+
+```sh
+brew install voska/tap/close
+close --help
+```
+
+To install a release on Windows, use the shared Scoop bucket:
+
+```powershell
+scoop bucket add voska https://github.com/voska/scoop-bucket
+scoop install close
+```
+
+Each tagged release includes archives for macOS, Linux and Windows (amd64 and
+arm64), with SHA-256 checksums, on the [releases page](https://github.com/voska/close/releases).
+
+To install from source, use Go 1.25 or newer:
 
 ```sh
 go install github.com/voska/close/cmd/close@latest
 close --help
 ```
 
-From source, run `make build` and use `./bin/close`. There is no tagged release
-or Homebrew formula yet.
+From a checkout, run `make build` and use `./bin/close`.
+
+## Releases
+
+Pull requests and pushes to `master` run `make ci` on Linux and macOS: format
+checks, vet, pinned golangci-lint, race tests, coverage and binary smoke tests.
+CI also builds all six release archives and package manifests, verifies the
+linux/amd64 binary and completions, and uploads a snapshot artifact without
+publishing it.
+
+A `v*` tag runs the full checks on Linux and macOS before publishing the GitHub release,
+checksums and archives. Stable releases also update `Formula/close.rb` in
+`voska/homebrew-tap` and `close.json` in `voska/scoop-bucket`; prereleases do not
+advance the stable packages. Homebrew installs the binary and shell completions.
+
+The release job needs a repository secret named `HOMEBREW_TAP_GITHUB_TOKEN`:
+a fine-grained PAT scoped to `voska/homebrew-tap` and `voska/scoop-bucket`, with
+Contents read/write permission. Its built-in `GITHUB_TOKEN` has `contents: write`
+only in the publishing job. PR jobs use read-only tokens and never receive the
+package publishing credential.
+
+For the first release, provision that secret, merge the release workflow and
+tag the tested commit:
+
+```sh
+git tag v0.1.0 <tested-commit>
+git push --no-follow-tags origin refs/tags/v0.1.0:refs/tags/v0.1.0
+```
+
+After the release finishes, verify the published version with
+`brew install voska/tap/close` (or `brew upgrade voska/tap/close`),
+`brew test voska/tap/close` and `close version`. For local packaging checks,
+run `goreleaser release --snapshot --clean`; this generates archives and package
+manifests under `dist/` without credentials or publication.
 
 ## Authenticate
 

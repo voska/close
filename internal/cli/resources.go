@@ -219,7 +219,7 @@ func (b *bodyFlags) read(cmd *cobra.Command, in io.Reader, required bool) (map[s
 			if err != nil {
 				return nil, errfmt.New(2, "usage", "cannot open --data-file: %v", err)
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			reader = f
 		}
 		var err error

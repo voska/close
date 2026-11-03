@@ -124,7 +124,7 @@ func Write(w io.Writer, v map[string]any, mode string, fields []string, quiet bo
 			sort.Strings(fields)
 		}
 	}
-	var target io.Writer = w
+	target := w
 	var table *tabwriter.Writer
 	if mode == "table" {
 		table = tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
