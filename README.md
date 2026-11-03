@@ -4,6 +4,10 @@ Close CRM from the terminal. A Go CLI for people, scripts and agents, with
 JSON output, pagination and verified writes. Independent project; not affiliated
 with or endorsed by Close.
 
+[Docs](https://voska.github.io/close/) · [Agent skill](skills/close/SKILL.md) ·
+[Command reference](skills/close/references/COMMANDS.md) ·
+[llms.txt](https://voska.github.io/close/llms.txt)
+
 ## Install
 
 Homebrew and Scoop installation require a published release. Source installation
@@ -240,7 +244,20 @@ make build
 
 Tests use synthetic HTTP fixtures and require no Close account. CI runs on
 Linux and macOS with read-only GitHub permissions. GoReleaser supports local
-cross-platform snapshots; release publication is disabled. Authenticated live
+cross-platform snapshots without publishing. Authenticated live
 Close behavior has not been verified.
 
-[Build contract](SPEC.md) · [Close API docs](https://developer.close.com/api/overview)
+The shipped agent skill is in `skills/close/`. Copy that directory, including
+its references, into your agent's skills directory. It documents setup,
+response shapes, safe workflows and exit-code handling. `close schema` remains
+the source of truth for the installed version's command tree and flags.
+
+The dependency-free docs site lives in `site/`, deployed to
+`https://voska.github.io/close/` through `.github/workflows/pages.yml` on
+`master` changes to the site or skill. The workflow copies `skills/close/` to
+`/close/skill/`, so the published skill and references match the repository.
+There is no custom domain or publishing secret. Enable GitHub Pages with
+GitHub Actions as its source before the first deployment.
+
+[Build contract](SPEC.md) · [Contributor instructions](AGENTS.md) ·
+[Close API docs](https://developer.close.com/api/overview)

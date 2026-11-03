@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add contributor instructions, shipped Close agent skill and command reference,
+  and static GitHub Pages docs with llms.txt and skill downloads.
 - Add tested release snapshots, tagged GitHub releases, and automatic Homebrew
   and Scoop updates through the shared voska package repositories.
 - Run the pinned golangci-lint checks locally and in CI.
