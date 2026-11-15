@@ -11,7 +11,7 @@ builds:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 archives:
   - name_template: "close_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files: [LICENSE, README.md, CHANGELOG.md]
+    files: [LICENSE, README.md, CHANGELOG.md, policies/*.json]
     format_overrides:
       - goos: windows
         formats: [zip]

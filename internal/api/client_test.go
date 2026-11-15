@@ -185,8 +185,8 @@ func TestWriteReadback(t *testing.T) {
 					_, _ = w.Write([]byte(`{"id":"lead_demo","name":"Demo"}`))
 					return
 				}
-				if r.URL.RawQuery != "" {
-					t.Error("verification used filters")
+				if r.URL.Query().Get("_fields") != "id,name" || len(r.URL.Query()) != 1 {
+					t.Error("verification must request only the ID and written fields")
 				}
 				name := "Demo"
 				if !match {

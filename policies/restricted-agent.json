@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "deny": [
+    "message-content",
+    "ai-summaries",
+    "deletes",
+    "merges",
+    "exports",
+    "bulk-actions",
+    "raw-api"
+  ]
+}

@@ -5,7 +5,7 @@ LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DA
 GOLANGCI_VERSION := v2.15.0
 GOLANGCI_LINT := .tools/golangci-lint-$(GOLANGCI_VERSION)
 
-.PHONY: build fmt fmt-check vet lint test smoke ci tools clean
+.PHONY: build fmt fmt-check vet lint test smoke policy-smoke ci tools clean
 
 build:
 	go build -trimpath -ldflags '$(LDFLAGS)' -o bin/close ./cmd/close
@@ -35,6 +35,10 @@ test:
 
 smoke: build
 	python3 scripts/smoke-test.py ./bin/close
+
+policy-smoke:
+	CGO_ENABLED=0 GOOS=linux go build -trimpath -o bin/close-policy-linux ./cmd/close
+	python3 scripts/policy-smoke.py ./bin/close-policy-linux
 
 ci: fmt-check vet lint test smoke
 

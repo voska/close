@@ -23,6 +23,8 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: make ci
+      - if: runner.os == 'Linux'
+        run: make policy-smoke
   distribution:
     runs-on: ubuntu-latest
     steps:

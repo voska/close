@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Request only the ID and written fields during verification, with a full-record
+  fallback only when the endpoint explicitly rejects the field selector. Successful
+  write stdout is the observed record, normally limited to those requested keys;
+  read other fields separately if needed.
+- Add root-owned deployment policies for content families, destructive actions,
+  raw API access and optional read-only deployments; refusals exit 11 with a
+  named rule. Include a restricted-agent sample in release archives.
+
 - Add contributor instructions, shipped Close agent skill and command reference,
   and static GitHub Pages docs with llms.txt and skill downloads.
 - Add tested release snapshots, tagged GitHub releases, and automatic Homebrew

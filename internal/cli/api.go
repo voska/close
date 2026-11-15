@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/voska/close/internal/api"
 	"github.com/voska/close/internal/errfmt"
+	"github.com/voska/close/internal/policy"
 )
 
 func (a *app) addAPI() {
@@ -24,7 +25,7 @@ func (a *app) addAPI() {
 		if err != nil {
 			return err
 		}
-		read := method == "GET" || (method == "POST" && path == "data/search/")
+		read := policy.IsRead(method, path)
 		body, err := b.read(cmd, a.dep.In, !read && method != "DELETE")
 		if err != nil {
 			return err
@@ -41,6 +42,9 @@ func (a *app) addAPI() {
 		}
 		if all && !read {
 			return usage("--all only applies to reads")
+		}
+		if err := a.policy.Check(method, path, q, body); err != nil {
+			return err
 		}
 		if !read {
 			if err := a.mutation(f, true); err != nil {
@@ -84,6 +88,9 @@ func (a *app) addSearch() {
 	cmd := &cobra.Command{Use: "search", Short: "Search objects with Close's advanced JSON filtering API", Args: cobra.NoArgs, Example: "  close search --data-file filters.json --all", RunE: func(cmd *cobra.Command, _ []string) error {
 		body, err := b.read(cmd, a.dep.In, true)
 		if err != nil {
+			return err
+		}
+		if err := a.policy.Check("POST", "data/search/", nil, body); err != nil {
 			return err
 		}
 		c, err := a.client()
