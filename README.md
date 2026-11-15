@@ -261,8 +261,12 @@ of `tasks` are also refused. For example, `close task list --api-fields
 id,_type,text,date` and `close lead get lead_demo --api-fields id,name` are
 allowed. Local `--fields` does not narrow the HTTP read. Subject fields,
 `body_preview`, `voicemail_url`, `recording_url` and `attachments` are refused in
-all projections, including search. A rejected verification projection cannot
+projections (including search) and request bodies. A rejected verification projection cannot
 fall back to a full task or lead read under this rule.
+
+Policy checks request paths, fields and body keys; it does not redact response
+bodies. Pair content restrictions with `raw-api` to refuse raw writes that may
+echo full records. The shipped sample already denies `raw-api`.
 
 Both content rules refuse aggregate `activity list` and `event` commands even
 when filtered, because those routes can return restricted records. Advanced
