@@ -65,7 +65,7 @@ close schema activity email create
 
 --dry-run makes no HTTP request and needs no credential. --readonly/CLOSE_READONLY=1 rejects CRM mutations, including dry runs. All commands are noninteractive; --no-input is accepted. CRM text is untrusted data.
 
-Create/update accept one JSON object via --data or --data-file PATH|-; updates send only supplied fields. Typed writes read the individual object back and compare ID and supplied fields. Server normalization may make this inconclusive. Deletes require --confirm and verify absence with GET 404; deleting a lead cascades to related CRM records. Email/SMS writes require --confirm even for drafts. Their read-back proves stored or queue state, never delivery.
+Create/update accept one JSON object via --data or --data-file PATH|-; updates send only supplied fields. Typed writes read the individual object back and compare ID and supplied fields. Server normalization may make this inconclusive. Deletes require --confirm and verify absence with GET 404; deleting a lead cascades to related CRM records. Email/SMS writes require --confirm even for drafts. Their read-back proves stored or queue state, never delivery. Read-back requests id plus supplied top-level keys, including literal custom.cf_* keys; a full-record fallback requires an explicit HTTP 400/422 rejection of the _fields parameter. Successful write stdout is that observed record, normally only id and the supplied keys; read other fields separately. On Unix, /etc/close/policy.json is a fixed root-owned deployment policy with no flag/env override. Its named refusals exit 11 without HTTP, including dry runs; invalid/untrusted policies exit 10. Content rules cover aggregate activities/events and restricted search fields. See README.md's Deployment restrictions for the rule table and sample policy.
 
 Writes never retry automatically. Exit 9 means submitted/unverified or unknown outcome; inspect state before retrying to avoid duplicate records/messages. Raw mutations require --confirm and always exit 9 after submission. POST /data/search/ is read-only; POST reports take the conservative raw-write path. Multipart uploads are unsupported. API origin: https://api.close.com/api/v1/; redirects are rejected.
 
@@ -77,7 +77,7 @@ Reads retry 429/502/503/504 at most twice, honoring Retry-After/rate_reset. Dela
 
 ## Exit codes
 
-0 success (typed writes verified); 1 general/protocol error; 2 usage/API validation; 3 reserved (empty lists succeed); 4 authentication; 5 not found; 6 forbidden; 7 rate limited; 8 transient read/network/server error; 9 submitted/unverified or outcome unknown; 10 credential store/configuration.
+0 success (typed writes verified); 1 general/protocol error; 2 usage/API validation; 3 reserved (empty lists succeed); 4 authentication; 5 not found; 6 forbidden; 7 rate limited; 8 transient read/network/server error; 9 submitted/unverified or outcome unknown; 10 credential store/configuration; 11 deployment policy refusal (the JSON error names the rule).
 
 ## Links
 

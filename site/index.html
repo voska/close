@@ -266,6 +266,7 @@ close schema exit-codes</code></pre>
           <tr><td>8</td><td>Transient read, network or server error</td></tr>
           <tr><td><span class="exit-9">9</span></td><td>Submitted, unverified or write outcome unknown</td></tr>
           <tr><td>10</td><td>Credential store or configuration error</td></tr>
+          <tr><td>11</td><td>Deployment policy refusal; the JSON error names the rule</td></tr>
         </tbody>
       </table>
       <p>Deletes, email/SMS writes and raw mutations require <code>--confirm</code>. Deleting a lead also deletes related CRM records.</p>

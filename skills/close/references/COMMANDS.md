@@ -79,8 +79,10 @@ Deletes require `--confirm`; lead deletion cascades to related CRM records.
 Every email/SMS mutation requires `--confirm`, including draft creation/update.
 Stored or queued state never proves delivery. There is no automatic write retry.
 
-Successful create/update reads the individual object back and compares the ID
-and supplied fields. Server normalization may make this inconclusive. Exit 9
+Successful create/update requests only `id` and supplied top-level keys during
+read-back, compares their values and prints that observed record. A full-record
+fallback requires an explicit HTTP 400/422 rejection of the `_fields` parameter.
+Server normalization may make this inconclusive. Exit 9
 means submitted/unverified or unknown outcome; inspect any observed stdout
 record plus the stderr error before retrying. Successful deletion verifies
 an individual GET returning 404. Repeated deletion reports
@@ -133,7 +135,10 @@ Errors are stderr JSON: `{"error":{"code":4,"type":"authentication","message":".
 0 success; 1 general/protocol; 2 usage/API validation; 3 reserved (empty lists
 exit 0); 4 authentication; 5 not found; 6 forbidden; 7 rate limited;
 8 transient read/network/server; 9 submitted/unverified or outcome unknown;
-10 credential store/configuration. `close schema exit-codes` is authoritative.
+10 credential store/configuration; 11 deployment policy refusal with a named
+`rule`. `close schema exit-codes` is authoritative. Deployment policy can refuse
+raw API and aggregate activity/event examples above; prefer typed note/custom
+activity reads when those families are permitted.
 
 Reads retry 429/502/503/504 at most twice and respect `Retry-After`/`rate_reset`.
 Delays over 30 seconds return to the caller. Writes never retry automatically.
