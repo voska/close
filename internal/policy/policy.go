@@ -118,6 +118,15 @@ func (p *Policy) Check(method, path string, query url.Values, body map[string]an
 			blocked = slices.Contains(parts, "bulk_action") || slices.Contains(parts, "bulk_actions") || slices.Contains(parts, "bulk")
 		case "message-content", "ai-summaries":
 			blocked = contentPath(rule, path)
+			if rule == "message-content" && read && (parts[0] == "task" || parts[0] == "lead") {
+				// Tasks carry communication previews; leads embed task objects.
+				blocked = blocked || len(query["_fields"]) == 0
+				for _, fields := range query["_fields"] {
+					for _, field := range strings.Split(fields, ",") {
+						blocked = blocked || strings.TrimSpace(field) == ""
+					}
+				}
+			}
 			for _, fields := range query["_fields"] {
 				blocked = blocked || contentField(rule, fields)
 			}
@@ -166,7 +175,7 @@ func contentField(rule, fields string) bool {
 		}
 		if rule == "message-content" {
 			switch field {
-			case "body_text", "body_html":
+			case "body_text", "body_html", "body_preview", "subject", "voicemail_url", "recording_url", "attachments", "tasks":
 				return true
 			}
 			if strings.Contains(field, "transcript") {

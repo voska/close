@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/voska/close/internal/errfmt"
@@ -14,7 +15,7 @@ func TestClientPolicyBlocksBeforeRequest(t *testing.T) {
 	calls := 0
 	c := fixture(t, func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(500) })
 	c.Policy = &policy.Policy{Version: 1, Deny: []string{"message-content", "writes"}}
-	for _, request := range []struct{ method, path string }{{"GET", "/Activity/Email/"}, {"POST", "lead/"}, {"PUT", "contact/cont_demo/"}, {"DELETE", "task/task_demo/"}} {
+	for _, request := range []struct{ method, path string }{{"GET", "/Activity/Email/"}, {"GET", "task/task_demo/"}, {"GET", "lead/lead_demo/"}, {"POST", "lead/"}, {"PUT", "contact/cont_demo/"}, {"DELETE", "task/task_demo/"}} {
 		_, err := c.Do(context.Background(), request.method, request.path, nil, nil, true)
 		var e *errfmt.Error
 		if !errors.As(err, &e) || e.Code != 11 || calls != 0 {
@@ -26,5 +27,32 @@ func TestClientPolicyBlocksBeforeRequest(t *testing.T) {
 	}
 	if calls != 0 {
 		t.Fatal("policy refusal reached transport")
+	}
+}
+
+func TestPolicyRefusesFullReadbackFallback(t *testing.T) {
+	for _, tc := range []struct{ resource, field string }{{"task", "text"}, {"lead", "name"}} {
+		t.Run(tc.resource, func(t *testing.T) {
+			reads, writes := 0, 0
+			c := fixture(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == "PUT" {
+					writes++
+					_, _ = w.Write([]byte(`{"id":"demo"}`))
+					return
+				}
+				reads++
+				if r.URL.Query().Get("_fields") != "id,"+tc.field {
+					t.Errorf("unexpected read query: %v", r.URL.Query())
+				}
+				w.WriteHeader(400)
+				_, _ = w.Write([]byte(`{"error":"_fields is not supported"}`))
+			})
+			c.Policy = &policy.Policy{Version: 1, Deny: []string{"message-content"}}
+			_, err := c.Write(context.Background(), "PUT", tc.resource+"/demo/", map[string]any{tc.field: "Demo"})
+			var e *errfmt.Error
+			if !errors.As(err, &e) || e.Code != 9 || !strings.Contains(e.Message, "message-content") || reads != 1 || writes != 1 {
+				t.Fatalf("err=%v reads=%d writes=%d", err, reads, writes)
+			}
+		})
 	}
 }

@@ -18,6 +18,7 @@ root = pathlib.Path(__file__).resolve().parents[1]
 binary = pathlib.Path(sys.argv[1]).resolve()
 image = 'close-policy-smoke:' + uuid.uuid4().hex
 (root / 'bin').mkdir(exist_ok=True)
+# CLOSE_POLICY is an override decoy; the binary deliberately ignores it.
 base = ['docker', 'run', '--rm', '--pull=never', '--network', 'none', '-e', 'CLOSE_BASE_URL=http://127.0.0.1:1/api/v1/', '-e', 'CLOSE_API_KEY=fixture-key', '-e', 'CLOSE_READONLY=0', '-e', 'CLOSE_POLICY=/tmp/allow.json']
 
 def check(args, code, rule=None, setup=None):
@@ -43,11 +44,24 @@ with tempfile.TemporaryDirectory(prefix='policy-smoke-', dir=root / 'bin') as di
         subprocess.run(['docker', 'build', '-t', image, str(context)], check=True)
         check(['version'], 0)
         check(['activity', 'email', 'list', '--readonly=false'], 11, 'message-content')
+        check(['task', 'list'], 11, 'message-content')
+        check(['task', 'get', 'task_demo'], 11, 'message-content')
+        check(['task', 'list', '--filter', '_type=email_followup'], 11, 'message-content')
+        check(['task', 'get', 'task_demo', '--fields', 'id'], 11, 'message-content')
+        check(['task', 'list', '--api-fields', 'body_preview'], 11, 'message-content')
+        check(['task', 'get', 'task_demo', '--api-fields', 'body_preview'], 11, 'message-content')
+        check(['task', 'get', 'task_demo', '--api-fields', 'subject,voicemail_url,recording_url,attachments'], 11, 'message-content')
+        check(['task', 'list', '--api-fields', 'id,_type,text,date'], 8)
+        check(['task', 'get', 'task_demo', '--api-fields', 'id,_type,text,date'], 8)
+        check(['lead', 'list'], 11, 'message-content')
+        check(['lead', 'get', 'lead_demo'], 11, 'message-content')
+        check(['lead', 'get', 'lead_demo', '--api-fields', 'id,tasks'], 11, 'message-content')
+        check(['lead', 'get', 'lead_demo', '--api-fields', 'id,name'], 8)
         check(['activity', 'list', '--fields', 'id'], 11, 'message-content')
         check(['api', 'GET', '/me/'], 11, 'raw-api')
         check(['lead', 'delete', 'lead_demo', '--confirm'], 11, 'deletes')
         check(['lead', 'update', 'lead_demo', '--data', '{"name":"Demo"}', '--dry-run'], 0)
-        check(['lead', 'list'], 8)
+        check(['lead', 'list', '--api-fields', 'id,name'], 8)
         check(['activity', 'email', 'list'], 10, setup='chmod 0666 /etc/close/policy.json')
         check(['activity', 'email', 'list'], 10, setup='chmod 0777 /etc/close')
         check(['activity', 'email', 'list'], 10, setup='chown nobody /etc/close/policy.json')
@@ -61,6 +75,6 @@ with tempfile.TemporaryDirectory(prefix='policy-smoke-', dir=root / 'bin') as di
         check(['activity', 'email', 'list'], 11, 'message-content', setup='mv /etc/close/policy.json /etc/close/real.json; ln -s real.json /etc/close/policy.json')
         check(['activity', 'email', 'list'], 11, 'message-content', setup='mkdir -p /private/etc; mv /etc/close /private/etc/close; ln -s /private/etc/close /etc/close')
         check(['lead', 'list'], 8, setup="printf '%s' '{\"version\":1,\"deny\":[]}' > /etc/close/policy.json")
-        print('Linux policy binary smoke: 20 cases passed as uid 65534; no external network')
+        print('Linux policy binary smoke: 33 cases passed as uid 65534; no external network')
     finally:
         subprocess.run(['docker', 'image', 'rm', image], check=False, stdout=subprocess.DEVNULL)

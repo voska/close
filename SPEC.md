@@ -37,7 +37,9 @@
   bulk-actions, raw-api and optional writes rules. Missing policy preserves
   behavior; unreadable/untrusted/invalid policy exits 10. Refusals exit 11 with
   a named rule, including dry runs. Aggregate activities/events and restricted
-  search projections are refused by content rules. Local discovery stays usable.
+  search projections are refused by content rules. Message-content restrictions
+  require explicit task/lead projections and refuse embedded tasks, subjects,
+  body previews, recording URLs and attachments. Local discovery stays usable.
   Policies are CLI controls, not server-side permission or process isolation.
 - Never retry writes or follow redirects. Reads (including search POST) retry
   429/502/503/504 at most twice, honoring Retry-After and legacy rate_reset.

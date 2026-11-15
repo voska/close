@@ -246,7 +246,7 @@ Policy denials also apply to `--dry-run`.
 
 | Rule | Refused operations |
 | --- | --- |
-| `message-content` | Communication activities (email, threads, SMS, calls, meetings, WhatsApp and future activity types), transcripts and message templates. Only typed note/custom activity families remain allowed. |
+| `message-content` | Communication activities (email, threads, SMS, calls, meetings, WhatsApp and future activity types), transcripts, message templates, subjects, body previews, recording URLs and attachments. Task/lead reads require explicit API fields excluding communication content and embedded `tasks`. Only typed note/custom activity families remain allowed. |
 | `ai-summaries` | Summary endpoints and fields, plus call, meeting and email-thread records that can contain summaries. |
 | `deletes` | Every DELETE request and delete-action endpoints. |
 | `merges` | Merge endpoints, including lead merges. |
@@ -254,6 +254,15 @@ Policy denials also apply to `--dry-run`.
 | `bulk-actions` | Bulk action families, including reads. |
 | `raw-api` | Every `close api` invocation, including GET and search. |
 | `writes` | Every mutation. GET and POST `/data/search/` remain reads. |
+
+With `message-content` denied, task and lead `list`/`get` need an explicit
+`--api-fields` projection. Leads embed tasks, so full lead reads and projections
+of `tasks` are also refused. For example, `close task list --api-fields
+id,_type,text,date` and `close lead get lead_demo --api-fields id,name` are
+allowed. Local `--fields` does not narrow the HTTP read. Subject fields,
+`body_preview`, `voicemail_url`, `recording_url` and `attachments` are refused in
+all projections, including search. A rejected verification projection cannot
+fall back to a full task or lead read under this rule.
 
 Both content rules refuse aggregate `activity list` and `event` commands even
 when filtered, because those routes can return restricted records. Advanced

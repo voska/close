@@ -8,7 +8,9 @@
   read other fields separately if needed.
 - Add root-owned deployment policies for content families, destructive actions,
   raw API access and optional read-only deployments; refusals exit 11 with a
-  named rule. Include a restricted-agent sample in release archives.
+  named rule. Include a restricted-agent sample in release archives. Content
+  restrictions require explicit safe task/lead projections and refuse task
+  previews, subjects, recordings, attachments and embedded tasks.
 
 - Add contributor instructions, shipped Close agent skill and command reference,
   and static GitHub Pages docs with llms.txt and skill downloads.
