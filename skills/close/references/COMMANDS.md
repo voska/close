@@ -57,11 +57,18 @@ set defaults. Explicit keychain account selection conflicts with either
 or `_skip` filters on typed lists. `event list` uses `--filter _cursor=TOKEN`.
 Events cover 30 days; offset deduplication does not provide snapshot isolation.
 
+Under a `message-content` deployment policy, `task` and `lead` `list`/`get`
+exit 11 unless `--api-fields` names the fields to fetch, for example
+`id,_type,date,is_complete,lead_id` or `id,display_name`. `--fields` is local
+and does not narrow the request. `subject`, `body_preview`, `voicemail_url`,
+`recording_url`, `attachments` and a lead's embedded `tasks` are refused in
+every projection, search included, and as request-body keys.
+
 `custom-field --object` accepts `lead`, `contact`, `opportunity`, `activity`,
 `shared` or `custom_object_type`.
 
 ```sh
-close --readonly lead list --all --fields id,display_name
+close --readonly lead list --all --api-fields id,display_name --fields id,display_name
 close --readonly contact list --filter lead_id=lead_demo
 close --readonly activity list --filter _type=Note
 close --readonly custom-field list --object contact
@@ -81,7 +88,8 @@ Stored or queued state never proves delivery. There is no automatic write retry.
 
 Successful create/update requests only `id` and supplied top-level keys during
 read-back, compares their values and prints that observed record. A full-record
-fallback requires an explicit HTTP 400/422 rejection of the `_fields` parameter.
+fallback requires an explicit HTTP 400/422 rejection of the `_fields` parameter
+and stays subject to deployment policy; a refused fallback exits 9.
 Server normalization may make this inconclusive. Exit 9
 means submitted/unverified or unknown outcome; inspect any observed stdout
 record plus the stderr error before retrying. Successful deletion verifies

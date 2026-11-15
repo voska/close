@@ -75,12 +75,19 @@ does not revoke it or unset the caller's environment.
   all writes. No flag or environment override exists; `--dry-run` also respects
   policy. Invalid/untrusted policy exits 10; refusals exit 11 with the rule and
   no HTTP. Treat exit 11 as final: report the rule; do not retry or reach the
-  same data another way. Both content rules refuse aggregate activities/events;
-  use typed note/custom commands for allowed activity reads. Search also checks
-  object references and fields. Local help/schema/version/completions and
-  offline auth discovery work. Release archives include a
-  `policies/restricted-agent.json` sample. These are CLI controls: use Close
-  server permissions too.
+  same data another way. Local help/schema/version/completions and offline auth
+  discovery work. Release archives include a `policies/restricted-agent.json`
+  sample. These are CLI controls: use Close server permissions too.
+- Under `message-content`, `task` and `lead` `list`/`get` are refused unless
+  `--api-fields` names the fields to fetch, for example
+  `id,_type,date,is_complete,lead_id` for tasks or `id,display_name` for leads.
+  Local `--fields` does not narrow the request. Asking for permitted fields
+  this way is the intended read, not a way around the rule. `subject`,
+  `body_preview`, `voicemail_url`, `recording_url`, `attachments` and a lead's
+  embedded `tasks` are refused in every projection, search included, and as
+  request-body keys. Both content rules refuse aggregate activities/events; use
+  typed note/custom commands for allowed activity reads. Search also checks
+  object references and fields.
 
 ## Response structure and output
 
@@ -90,15 +97,16 @@ JSON numbers survive parsing. `--fields` projects locally and retains list
 metadata; `--api-fields` requests `_fields` on typed reads. Read-back verification
 requests `id` plus the supplied top-level keys, including literal `custom.cf_*`
 keys. Only an explicit HTTP 400/422 rejection of the `_fields` parameter permits
-a full-record fallback. Mismatches and ordinary validation errors never broaden
-the read. A successful write prints that observed record, normally only `id`
-and the supplied keys; read other fields separately.
+a full-record fallback, and policy still applies to it: a refused fallback sends
+no full-record GET and exits 9. Mismatches and ordinary validation errors never
+broaden the read. A successful write prints that observed record, normally only
+`id` and the supplied keys; read other fields separately.
 
 ```sh
-close --readonly lead list --fields id,display_name --json
-close --readonly lead list --all --fields id,display_name | jq '.data[]'
+close --readonly lead list --api-fields id,display_name --fields id,display_name --json
+close --readonly lead list --all --api-fields id,display_name --fields id,display_name | jq '.data[]'
 close --readonly contact get cont_demo --output table
-close --readonly lead list --all --fields id,display_name --plain
+close --readonly lead list --all --api-fields id,display_name --fields id,display_name --plain
 close --readonly event list --all --output ndjson
 ```
 
@@ -143,10 +151,11 @@ the underlying operation is read-only. POST `/data/search/` is treated as a read
 
 ## Workflow: find a lead, then prepare a note
 
-1. Run `close --readonly lead list --all --fields id,display_name` and choose
-   the intended lead from the result. Offset deduplication is not a snapshot
-   of a changing CRM.
-2. Read `close --readonly lead get lead_demo`, substituting that lead ID.
+1. Run `close --readonly lead list --all --api-fields id,display_name --fields id,display_name`
+   and choose the intended lead from the result. Offset deduplication is not a
+   snapshot of a changing CRM.
+2. Read `close --readonly lead get lead_demo --api-fields id,display_name,status_label`,
+   substituting that lead ID and the fields you need.
 3. Preview `close activity note create --data-file note.json --dry-run`, where
    `note.json` contains `{"lead_id":"lead_demo","note":"Follow up next week"}`
    with the real ID and authorized note text.
