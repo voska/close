@@ -44,4 +44,4 @@ ci: fmt-check vet lint test smoke
 
 clean:
 	go clean
-	rm -f bin/close coverage.out
+	rm -f bin/close bin/close-policy-linux coverage.out
