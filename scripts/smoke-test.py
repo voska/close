@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 class Handler(BaseHTTPRequestHandler):
     record = None
     methods = []
+    verify_status = 200
 
     def log_message(self, *_args):
         pass
@@ -19,6 +20,8 @@ class Handler(BaseHTTPRequestHandler):
     def respond(self, body, status=200):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        if status == 503:
+            self.send_header("Retry-After", "31")
         self.end_headers()
         if status != 204:
             self.wfile.write(json.dumps(body).encode())
@@ -31,6 +34,8 @@ class Handler(BaseHTTPRequestHandler):
             self.respond({"data": [{"id": f"lead_{skip}", "name": "Demo"}], "has_more": skip == 0})
         elif parsed.path == "/api/v1/lead/lead_demo/" and self.record:
             self.respond(self.record)
+        elif parsed.path == "/api/v1/task/task_demo/":
+            self.respond({"error": "_fields is not supported"}, self.verify_status)
         elif parsed.path == "/api/v1/me/":
             self.respond({"id": "user_demo", "organization_id": "orga_demo"})
         else:
@@ -48,6 +53,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         type(self).methods.append("PUT")
+        if self.path == "/api/v1/task/task_demo/":
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.respond({"id": "task_demo", "is_complete": False, "text": "SECRET_SMS_BODY", "body_preview": "SECRET_EMAIL_BODY"})
+            return
         type(self).record.update(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
         self.respond(self.record)
 
@@ -87,10 +96,16 @@ def main():
         run("lead", "delete", "lead_demo", code=2)
         assert run("lead", "create", "--data", '{"name":"Preview"}', "--dry-run")["dry_run"] is True
         assert Handler.methods == ["POST", "PUT", "DELETE"]
+        for key in ("", " ", "x,", " name", "x y"):
+            assert run("task", "update", "task_demo", "--data", json.dumps({"is_complete": False, key: 0}), code=2) is None
+        assert Handler.methods == ["POST", "PUT", "DELETE"]
+        for status in (400, 503):
+            Handler.verify_status = status
+            assert run("task", "update", "task_demo", "--data", '{"is_complete":false}', code=9) == {"id": "task_demo", "is_complete": False}
         run("api", "POST", "lead/", "--data", "{}", "--confirm", code=9)
         run("--readonly", "lead", "create", "--data", "{}", code=2)
         run("lead", "get", "../me", code=2)
-        print("Binary smoke: version, schema, auth, pagination, search, verified CRUD, dry-run, raw-write and error contracts passed")
+        print("Binary smoke: version, schema, auth, pagination, search, verified CRUD, dry-run, raw-write, narrowed unverified echoes and error contracts passed")
     finally:
         server.shutdown()
         worker.join()

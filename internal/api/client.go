@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/voska/close/internal/errfmt"
 	"github.com/voska/close/internal/policy"
@@ -299,6 +300,18 @@ func (c *Client) List(ctx context.Context, method, path string, query url.Values
 }
 
 func (c *Client) Write(ctx context.Context, method, path string, body map[string]any) (map[string]any, error) {
+	fields := map[string]bool{"id": true}
+	for key := range body {
+		if key == "" || strings.Contains(key, ",") || strings.IndexFunc(key, unicode.IsSpace) >= 0 {
+			return nil, errfmt.New(2, "usage", "write body keys must be non-empty and contain no commas or whitespace")
+		}
+		fields[key] = true
+	}
+	names := make([]string, 0, len(fields))
+	for key := range fields {
+		names = append(names, key)
+	}
+	sort.Strings(names)
 	v, err := c.Do(ctx, method, path, nil, body, false)
 	var e *errfmt.Error
 	alreadyAbsent := method == "DELETE" && errors.As(err, &e) && e.Code == 5
@@ -307,6 +320,12 @@ func (c *Client) Write(ctx context.Context, method, path string, body map[string
 			return nil, unverified("write outcome unknown; do not retry blindly", err)
 		}
 		return nil, err
+	}
+	// A write echo is not a verified read and may include restricted content.
+	for key := range v {
+		if !fields[key] {
+			delete(v, key)
+		}
 	}
 	verifyPath := path
 	if method == "POST" {
@@ -322,15 +341,6 @@ func (c *Client) Write(ctx context.Context, method, path string, body map[string
 		}
 		verifyPath = strings.TrimSuffix(path, "/") + "/" + id + "/"
 	}
-	fields := map[string]bool{"id": true}
-	for key := range body {
-		fields[key] = true
-	}
-	names := make([]string, 0, len(fields))
-	for key := range fields {
-		names = append(names, key)
-	}
-	sort.Strings(names)
 	observed, err := c.Do(ctx, "GET", verifyPath, url.Values{"_fields": {strings.Join(names, ",")}}, nil, true)
 	if fieldsUnsupported(err) {
 		observed, err = c.Do(ctx, "GET", verifyPath, nil, nil, true)

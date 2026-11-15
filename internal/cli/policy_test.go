@@ -27,6 +27,11 @@ func TestDeploymentPolicyRefusesBeforeHTTP(t *testing.T) {
 		{"message-content", []string{"task", "list", "--filter", "_type=email_followup"}},
 		{"message-content", []string{"task", "get", "task_demo", "--fields", "id"}},
 		{"message-content", []string{"task", "list", "--api-fields", "body_preview"}},
+		{"message-content", []string{"task", "list", "--filter", "_type=incoming_sms", "--api-fields", "id,text"}},
+		{"message-content", []string{"task", "get", "task_demo", "--api-fields", "id,text"}},
+		{"message-content", []string{"task", "update", "task_demo", "--data", `{"text":""}`, "--confirm"}},
+		{"message-content", []string{"search", "--data", `{"_fields":{"task.incoming_sms":["text"]}}`}},
+		{"message-content", []string{"search", "--data", `{"query":{"field_name":"text","object_type":"task.incoming_sms"}}`}},
 		{"message-content", []string{"task", "get", "task_demo", "--api-fields", "subject,voicemail_url,attachments"}},
 		{"message-content", []string{"lead", "list"}},
 		{"message-content", []string{"lead", "get", "lead_demo"}},
@@ -69,7 +74,7 @@ func TestDeploymentPolicyRefusesBeforeHTTP(t *testing.T) {
 }
 
 func TestDeploymentPolicyAllowsLocalDiscoveryAndReads(t *testing.T) {
-	for _, args := range [][]string{{"version"}, {"schema", "exit-codes"}, {"lead", "--help"}, {"completion", "bash"}, {"lead", "list", "--api-fields", "id,name"}, {"task", "list", "--api-fields", "id,_type,text,date"}, {"task", "get", "task_demo", "--api-fields", "id,_type,text,date"}, {"search", "--data", `{"query":{},"_fields":{"lead":["id","name"]}}`}} {
+	for _, args := range [][]string{{"version"}, {"schema", "exit-codes"}, {"lead", "--help"}, {"completion", "bash"}, {"lead", "list", "--api-fields", "id,name"}, {"task", "list", "--api-fields", "id,_type,date,is_complete"}, {"task", "get", "task_demo", "--api-fields", "id,_type,date,is_complete"}, {"search", "--data", `{"query":{},"_fields":{"lead":["id","name"]}}`}} {
 		var out, stderr bytes.Buffer
 		code := Execute(context.Background(), args, Dependencies{Out: &out, Err: &stderr, LoadPolicy: func() (*policy.Policy, error) {
 			return &policy.Policy{Version: 1, Deny: []string{"writes", "raw-api", "message-content", "ai-summaries"}}, nil
@@ -100,5 +105,55 @@ func TestInvalidPolicyFailsClosedButDiscoveryWorks(t *testing.T) {
 		if code != want {
 			t.Fatalf("%v: code=%d want=%d err=%s", args, code, want, stderr.String())
 		}
+	}
+}
+
+func TestTaskWriteOutputOnVerificationFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name, body               string
+		status, code, wantWrites int
+	}{
+		{"empty-key", `{"is_complete":false,"":0}`, 200, 2, 0},
+		{"comma-key", `{"is_complete":false,"x,":0}`, 200, 2, 0},
+		{"space-key", `{"is_complete":false," ":0}`, 200, 2, 0},
+		{"refused-fallback", `{"is_complete":false}`, 400, 9, 1},
+		{"server-error", `{"is_complete":false}`, 503, 9, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, stderr bytes.Buffer
+			writes := 0
+			code := Execute(context.Background(), []string{"task", "update", "task_demo", "--data", tc.body, "--confirm"}, Dependencies{
+				Out: &out, Err: &stderr,
+				LoadPolicy: func() (*policy.Policy, error) {
+					return &policy.Policy{Version: 1, Deny: []string{"message-content"}}, nil
+				},
+				Getenv: func(k string) string {
+					if k == "CLOSE_API_KEY" {
+						return "fixture-key"
+					}
+					return ""
+				},
+				Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					status, reply := tc.status, `{"error":"_fields is not supported"}`
+					if r.Method == "PUT" {
+						writes++
+						status, reply = 200, `{"id":"task_demo","is_complete":false,"text":"SECRET_SMS_BODY","body_preview":"SECRET_EMAIL_BODY"}`
+					}
+					return &http.Response{StatusCode: status, Header: http.Header{"Retry-After": {"31"}}, Body: io.NopCloser(strings.NewReader(reply))}, nil
+				}),
+			}, Build{})
+			if code != tc.code || writes != tc.wantWrites || strings.Contains(out.String(), "SECRET") {
+				t.Fatalf("code=%d writes=%d out=%s err=%s", code, writes, out.String(), stderr.String())
+			}
+			if tc.code == 2 && out.Len() != 0 {
+				t.Fatal("invalid input printed a write result", out.String())
+			}
+			if tc.code == 9 {
+				var v map[string]any
+				if err := json.Unmarshal(out.Bytes(), &v); err != nil || len(v) != 2 || v["id"] != "task_demo" || v["is_complete"] != false {
+					t.Fatal("wrong unverified output", out.String(), err)
+				}
+			}
+		})
 	}
 }

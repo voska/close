@@ -20,8 +20,9 @@
   or an API error; `--all` emits no partial aggregate on failure. NDJSON emits
   individual records after collection. It is not a live stream.
 - `create|update` consume exactly one JSON object via `--data` or
-  `--data-file PATH|-`. PUT sends only supplied fields. `delete` requires
-  `--confirm`. All email/SMS writes and raw API writes require `--confirm`.
+  `--data-file PATH|-`. PUT sends only supplied fields. Top-level typed-write keys
+  must be non-empty and contain no commas or whitespace; invalid keys exit 2
+  before HTTP. `delete` requires `--confirm`. All email/SMS writes and raw API writes require `--confirm`.
   `--dry-run` previews method, relative path, query and body without credentials
   or network activity. `--readonly` rejects mutations, including raw ones.
 - Every typed write reads the individual object back using `_fields=id` plus
@@ -30,7 +31,9 @@
   permits one full-record fallback; mismatches never broaden the read. Sent values must be a subset of observed values. Normalized
   values that cannot be compared are reported unverified. A successful delete
   requires GET returning 404. Email/SMS state proves persistence/queue state,
-  never delivery. Raw writes always return submitted/unverified (exit 9).
+  never delivery. When read-back fails or a create returns an invalid/missing ID,
+  unverified stdout contains only `id` and supplied top-level keys from the write
+  echo. Raw writes always return submitted/unverified (exit 9).
 - On Unix, a fixed root-owned `/etc/close/policy.json` restricts command
   families before HTTP. No flag/env override exists. Version 1 has a required
   `deny` array of message-content, ai-summaries, deletes, merges, exports,
@@ -39,7 +42,9 @@
   a named rule, including dry runs. Aggregate activities/events and restricted
   search projections are refused by content rules. Message-content restrictions
   require explicit task/lead projections and refuse embedded tasks, subjects,
-  body previews, recording URLs and attachments. Local discovery stays usable.
+  body previews, recording URLs and attachments. Task projections (including
+  `task.*` search projections) and task body keys refuse `text`; search
+  `field_name` references to `text` are refused even without an object type. Local discovery stays usable.
   Policies are CLI controls, not server-side permission or process isolation.
 - Never retry writes or follow redirects. Reads (including search POST) retry
   429/502/503/504 at most twice, honoring Retry-After and legacy rate_reset.

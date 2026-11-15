@@ -5,12 +5,16 @@
 - Request only the ID and written fields during verification, with a full-record
   fallback only when the endpoint explicitly rejects the field selector. Successful
   write stdout is the observed record, normally limited to those requested keys;
-  read other fields separately if needed.
+  read other fields separately if needed. If read-back fails or a create returns
+  no usable ID, the unverified write echo is limited to `id` and supplied
+  top-level keys. Reject empty body keys and keys containing commas or whitespace
+  before typed writes (exit 2).
 - Add root-owned deployment policies for content families, destructive actions,
   raw API access and optional read-only deployments; refusals exit 11 with a
   named rule. Include a restricted-agent sample in release archives. Content
   restrictions require explicit safe task/lead projections and refuse task
-  previews, subjects, recordings, attachments and embedded tasks.
+  previews, subjects, recordings, attachments, task `text` (including search
+  projections and conditions) and embedded tasks.
 
 - Add contributor instructions, shipped Close agent skill and command reference,
   and static GitHub Pages docs with llms.txt and skill downloads.

@@ -120,3 +120,53 @@ func TestEmptyReadbackAndNumericContract(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteRejectsInvalidProjectionKeysBeforeHTTP(t *testing.T) {
+	for _, key := range []string{"", " ", " name", "name ", "\tname", "name\n", "x,", "x,y", "x y"} {
+		t.Run(key, func(t *testing.T) {
+			calls := 0
+			c := fixture(t, func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				_, _ = w.Write([]byte(`{"id":"demo"}`))
+			})
+			v, err := c.Write(context.Background(), "PUT", "task/demo/", map[string]any{key: 0, "is_complete": false})
+			var e *errfmt.Error
+			if !errors.As(err, &e) || e.Code != 2 || calls != 0 || v != nil {
+				t.Fatalf("key=%q result=%v err=%v calls=%d", key, v, err, calls)
+			}
+		})
+	}
+}
+
+func TestUnverifiedWriteEchoContainsOnlySuppliedFields(t *testing.T) {
+	for _, tc := range []struct {
+		name, method, id string
+		status           int
+	}{
+		{"no-id", "POST", "", 200},
+		{"slash-id", "POST", "../me", 200},
+		{"invalid-id", "POST", "bad?", 200},
+		{"forbidden", "PUT", "demo", 403},
+		{"server-error", "PUT", "demo", 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fixture(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == "GET" {
+					w.WriteHeader(tc.status)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"id": tc.id, "is_complete": false, "text": "SECRET_SMS_BODY", "custom.cf_demo": json.Number("9007199254740993")})
+			})
+			path := "task/demo/"
+			if tc.method == "POST" {
+				path = "task/"
+			}
+			v, err := c.Write(context.Background(), tc.method, path, map[string]any{"is_complete": false, "custom.cf_demo": json.Number("9007199254740993")})
+			var e *errfmt.Error
+			want := map[string]any{"id": tc.id, "is_complete": false, "custom.cf_demo": json.Number("9007199254740993")}
+			if !errors.As(err, &e) || e.Code != 9 || !reflect.DeepEqual(v, want) {
+				t.Fatalf("result=%v err=%v, want=%v and exit 9", v, err, want)
+			}
+		})
+	}
+}

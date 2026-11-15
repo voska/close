@@ -208,7 +208,10 @@ Writes are never retried. After create/update the CLI reads the saved object
 and compares the ID and supplied fields. Successful stdout contains that
 observed record, normally just the requested ID and supplied keys; callers
 that need other fields must request a separate permitted read. Server normalization can make that
-inconclusive: exit 9 includes the observed record on stdout. Delete verification
+inconclusive: exit 9 includes the observed record on stdout. If no read-back is
+available, stdout contains only `id` and supplied top-level keys present in the
+write echo; it is unverified. Empty body keys and keys containing commas or
+whitespace are usage errors (exit 2) before the write is sent. Delete verification
 requires an individual GET returning 404. A repeated delete verifies absence
 and reports `deleted: false, already_absent: true`. Investigate exit 9 before retrying
 a create or sending another message.
@@ -258,11 +261,14 @@ Policy denials also apply to `--dry-run`.
 With `message-content` denied, task and lead `list`/`get` need an explicit
 `--api-fields` projection. Leads embed tasks, so full lead reads and projections
 of `tasks` are also refused. For example, `close task list --api-fields
-id,_type,text,date` and `close lead get lead_demo --api-fields id,name` are
+id,_type,date,is_complete` and `close lead get lead_demo --api-fields id,name` are
 allowed. Local `--fields` does not narrow the HTTP read. Subject fields,
 `body_preview`, `voicemail_url`, `recording_url` and `attachments` are refused in
-projections (including search) and request bodies. A rejected verification projection cannot
-fall back to a full task or lead read under this rule.
+projections (including search) and request bodies. A rejected verification
+projection cannot fall back to a full task or lead read under this rule. Task
+projections and body keys also refuse `text`, which contains the message body on
+inbound SMS tasks, including `task.*` search projections. Search conditions referencing `text` are refused
+even without an explicit object type.
 
 Policy checks request paths, fields and body keys; it does not redact response
 bodies. Pair content restrictions with `raw-api` to refuse raw writes that may
