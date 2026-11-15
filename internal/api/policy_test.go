@@ -39,7 +39,7 @@ func TestPolicyRefusesFullReadbackFallback(t *testing.T) {
 			c := fixture(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == "PUT" {
 					writes++
-					_, _ = w.Write([]byte(`{"id":"demo","date":"Demo","name":"Demo","text":"SECRET_SMS_BODY","body_preview":"SECRET_EMAIL_BODY"}`))
+					_, _ = w.Write([]byte(`{"id":"demo","date":"Demo","name":"Demo","text":"SECRET_SMS_BODY","body_preview":"SECRET_EMAIL_BODY","tasks":[{"body_preview":"SECRET_EMBEDDED_TASK_BODY"}]}`))
 					return
 				}
 				reads++
