@@ -26,14 +26,14 @@
   `--dry-run` previews method, relative path, query and body without credentials
   or network activity. `--readonly` rejects mutations, including raw ones.
 - Every typed write reads the individual object back using `_fields=id` plus
-  supplied top-level keys (including literal custom-field keys), without list
-  filters. Only an explicit HTTP 400/422 rejection of the `_fields` parameter
-  permits one full-record fallback; mismatches never broaden the read. Sent values must be a subset of observed values. Normalized
+  supplied top-level keys (including literal custom-field keys). Only an explicit
+  HTTP 400/422 rejection of the `_fields` parameter permits one full-record fallback;
+  mismatches never broaden the read. Sent values must be a subset of observed values. Normalized
   values that cannot be compared are reported unverified. A successful delete
   requires GET returning 404. Email/SMS state proves persistence/queue state,
   never delivery. When read-back fails or a create returns an invalid/missing ID,
-  unverified stdout contains only `id` and supplied top-level keys from the write
-  echo. Raw writes always return submitted/unverified (exit 9).
+  unverified stdout contains only `id` from the write echo (or an empty object if
+  absent). Raw writes always return submitted/unverified (exit 9).
 - On Unix, a fixed root-owned `/etc/close/policy.json` restricts command
   families before HTTP. No flag/env override exists. Version 1 has a required
   `deny` array of message-content, ai-summaries, deletes, merges, exports,
@@ -42,9 +42,19 @@
   a named rule, including dry runs. Aggregate activities/events and restricted
   search projections are refused by content rules. Message-content restrictions
   require explicit task/lead projections and refuse embedded tasks, subjects,
-  body previews, recording URLs and attachments. Task projections (including
-  `task.*` search projections) and task body keys refuse `text`; search
-  `field_name` references to `text` are refused even without an object type. Local discovery stays usable.
+  body previews, recording URLs and attachments. Task GET/search projections
+  allow only `id, _type, lead_id, lead_name, contact_id, contact_name, assigned_to,
+  assigned_to_name, created_by, created_by_name, updated_by, updated_by_name,
+  date, due_date, date_created, date_updated, is_complete, is_dateless, priority,
+  organization_id`. GET projections must have no empty items. Additionally,
+  `text` is allowed only on task lists with exactly one `_type=lead` and no
+  `_type__in`, or on `task.lead` search projections. Task writes may set `text`.
+  If policy refuses their individual verification GET, read once through
+  `task/?id=<id>&_type=lead&_fields=<same sorted fields>` and verify its single row.
+  Zero/multiple rows return exit 9 with only the write ID; failed pinned reads
+  never broaden. With no policy, verification uses the individual GET.
+  Search `field_name` references to `text` remain refused even without an object
+  type. Local discovery stays usable.
   Policies are CLI controls, not server-side permission or process isolation.
 - Never retry writes or follow redirects. Reads (including search POST) retry
   429/502/503/504 at most twice, honoring Retry-After and legacy rate_reset.

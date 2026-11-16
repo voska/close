@@ -322,27 +322,40 @@ func (c *Client) Write(ctx context.Context, method, path string, body map[string
 		return nil, err
 	}
 	// A write echo is not a verified read and may include restricted content.
-	for key := range v {
-		if !fields[key] {
-			delete(v, key)
-		}
+	echo := map[string]any{}
+	if id, ok := v["id"]; ok {
+		echo["id"] = id
 	}
 	verifyPath := path
 	if method == "POST" {
 		id, ok := v["id"].(string)
 		if !ok || id == "" {
-			return v, unverified("write returned no ID", nil)
+			return echo, unverified("write returned no ID", nil)
 		}
 		if strings.Contains(id, "/") {
-			return v, unverified("write returned invalid ID", nil)
+			return echo, unverified("write returned invalid ID", nil)
 		}
 		if _, err := Endpoint(id); err != nil {
-			return v, unverified("write returned invalid ID", nil)
+			return echo, unverified("write returned invalid ID", nil)
 		}
 		verifyPath = strings.TrimSuffix(path, "/") + "/" + id + "/"
 	}
-	observed, err := c.Do(ctx, "GET", verifyPath, url.Values{"_fields": {strings.Join(names, ",")}}, nil, true)
-	if fieldsUnsupported(err) {
+	projection := strings.Join(names, ",")
+	observed, err := c.Do(ctx, "GET", verifyPath, url.Values{"_fields": {projection}}, nil, true)
+	parts := strings.Split(strings.Trim(verifyPath, "/"), "/")
+	if errors.As(err, &e) && e.Code == 11 && parts[0] == "task" && fields["text"] {
+		observed, err = c.Do(ctx, "GET", "task/", url.Values{"id": {parts[len(parts)-1]}, "_type": {"lead"}, "_fields": {projection}}, nil, true)
+		if err == nil {
+			rows, _ := observed["data"].([]any)
+			observed = nil
+			if len(rows) == 1 {
+				observed, _ = rows[0].(map[string]any)
+			}
+			if observed == nil {
+				return echo, unverified("write submitted; lead-task read-back did not return exactly one object", nil)
+			}
+		}
+	} else if fieldsUnsupported(err) {
 		observed, err = c.Do(ctx, "GET", verifyPath, nil, nil, true)
 	}
 	if method == "DELETE" {
@@ -357,9 +370,8 @@ func (c *Client) Write(ctx context.Context, method, path string, body map[string
 		return observed, unverified("delete submitted; absence could not be verified", err)
 	}
 	if err != nil {
-		return v, unverified("write submitted; read-back failed", err)
+		return echo, unverified("write submitted; read-back failed", err)
 	}
-	parts := strings.Split(strings.Trim(verifyPath, "/"), "/")
 	if observed["id"] != parts[len(parts)-1] || !Subset(body, observed) {
 		return observed, unverified("write submitted; read-back did not match the ID and supplied fields", nil)
 	}

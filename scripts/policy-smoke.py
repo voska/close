@@ -4,7 +4,7 @@
 Usage: python3 scripts/policy-smoke.py PATH_TO_LINUX_BINARY
 The binary must match the local Docker daemon's architecture. No CRM account,
 host policy or credential mounts are used. Test containers have no network;
-the image build may pull the Alpine base image.
+the image build may pull Alpine and install Python for loopback fixtures.
 """
 import json
 import pathlib
@@ -39,7 +39,8 @@ with tempfile.TemporaryDirectory(prefix='policy-smoke-', dir=root / 'bin') as di
     shutil.copyfile(binary, context / 'close')
     (context / 'close').chmod(493)
     shutil.copyfile(root / 'policies/restricted-agent.json', context / 'policy.json')
-    (context / 'Dockerfile').write_text('FROM alpine:3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a\nRUN mkdir -p /etc/close && chmod 0755 /etc/close\nCOPY close /usr/local/bin/close\nCOPY --chmod=0644 policy.json /etc/close/policy.json\nUSER 65534:65534\nENTRYPOINT ["/usr/local/bin/close"]\n')
+    shutil.copyfile(root / 'scripts/smoke-test.py', context / 'smoke-test.py')
+    (context / 'Dockerfile').write_text('FROM alpine:3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a\nRUN apk add --no-cache python3\nRUN mkdir -p /etc/close && chmod 0755 /etc/close\nCOPY smoke-test.py /smoke-test.py\nCOPY close /usr/local/bin/close\nCOPY --chmod=0644 policy.json /etc/close/policy.json\nUSER 65534:65534\nENTRYPOINT ["/usr/local/bin/close"]\n')
     try:
         subprocess.run(['docker', 'build', '-t', image, str(context)], check=True)
         check(['version'], 0)
@@ -55,7 +56,6 @@ with tempfile.TemporaryDirectory(prefix='policy-smoke-', dir=root / 'bin') as di
         check(['task', 'get', 'task_demo', '--api-fields', 'id,_type,date,is_complete'], 8)
         check(['task', 'list', '--filter', '_type=incoming_sms', '--api-fields', 'id,text'], 11, 'message-content')
         check(['task', 'get', 'task_demo', '--api-fields', 'id,text'], 11, 'message-content')
-        check(['task', 'update', 'task_demo', '--data', '{"text":""}', '--confirm'], 11, 'message-content')
         check(['search', '--data', '{"_fields":{"task.incoming_sms":["text"]}}'], 11, 'message-content')
         check(['search', '--data', '{"query":{"object_type":"task.incoming_sms","field_name":"text"}}'], 11, 'message-content')
         check(['task', 'update', 'task_demo', '--data', '{"is_complete":false,"":0}', '--confirm'], 2)
@@ -81,6 +81,7 @@ with tempfile.TemporaryDirectory(prefix='policy-smoke-', dir=root / 'bin') as di
         check(['activity', 'email', 'list'], 11, 'message-content', setup='mv /etc/close/policy.json /etc/close/real.json; ln -s real.json /etc/close/policy.json')
         check(['activity', 'email', 'list'], 11, 'message-content', setup='mkdir -p /private/etc; mv /etc/close /private/etc/close; ln -s /private/etc/close /etc/close')
         check(['lead', 'list'], 8, setup="printf '%s' '{\"version\":1,\"deny\":[]}' > /etc/close/policy.json")
-        print('Linux policy binary smoke: 39 cases passed as uid 65534; no external network')
+        subprocess.run(base + ['--entrypoint', 'python3', image, '/smoke-test.py', '/usr/local/bin/close', '--policy'], check=True)
+        print('Linux policy binary smoke: trust checks and loopback acceptance passed as uid 65534; no external network')
     finally:
         subprocess.run(['docker', 'image', 'rm', image], check=False, stdout=subprocess.DEVNULL)

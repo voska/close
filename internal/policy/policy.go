@@ -121,20 +121,15 @@ func (p *Policy) Check(method, path string, query url.Values, body map[string]an
 			if rule == "message-content" && read && (parts[0] == "task" || parts[0] == "lead") {
 				// Tasks carry communication previews; leads embed task objects.
 				blocked = blocked || len(query["_fields"]) == 0
+				text := len(parts) == 1 && len(query["_type"]) == 1 && query.Get("_type") == "lead" && !query.Has("_type__in")
 				for _, fields := range query["_fields"] {
 					for _, field := range strings.Split(fields, ",") {
-						blocked = blocked || strings.TrimSpace(field) == ""
+						blocked = blocked || strings.TrimSpace(field) == "" || parts[0] == "task" && !taskField(field, text)
 					}
 				}
 			}
 			for _, fields := range query["_fields"] {
 				blocked = blocked || contentField(rule, fields)
-				blocked = blocked || (parts[0] == "task" && taskTextField(rule, fields))
-			}
-			if parts[0] == "task" {
-				for field := range body {
-					blocked = blocked || taskTextField(rule, field)
-				}
 			}
 			blocked = blocked || contentBody(rule, body)
 		}
@@ -197,15 +192,13 @@ func contentField(rule, fields string) bool {
 	return false
 }
 
-func taskTextField(rule, fields string) bool {
-	if rule == "message-content" {
-		for _, field := range strings.FieldsFunc(strings.ToLower(fields), func(r rune) bool { return r == ',' || r == '.' || r == '/' }) {
-			if strings.TrimSpace(field) == "text" {
-				return true
-			}
-		}
-	}
-	return false
+func taskField(field string, text bool) bool {
+	return text && field == "text" || slices.Contains([]string{
+		"id", "_type", "lead_id", "lead_name", "contact_id", "contact_name",
+		"assigned_to", "assigned_to_name", "created_by", "created_by_name",
+		"updated_by", "updated_by_name", "date", "due_date", "date_created",
+		"date_updated", "is_complete", "is_dateless", "priority", "organization_id",
+	}, field)
 }
 
 func contentBody(rule string, v any) bool {
@@ -222,8 +215,12 @@ func contentBody(rule string, v any) bool {
 				}
 			case "field_name":
 				// Search conditions may omit their task type; text can be an SMS body.
-				if s, ok := item.(string); ok && (contentField(rule, s) || taskTextField(rule, s)) {
-					return true
+				if s, ok := item.(string); ok {
+					for _, field := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == '.' || r == '/' }) {
+						if contentField(rule, field) || rule == "message-content" && strings.EqualFold(strings.TrimSpace(field), "text") {
+							return true
+						}
+					}
 				}
 			case "_fields":
 				switch fields := item.(type) {
@@ -232,17 +229,20 @@ func contentBody(rule string, v any) bool {
 						if contentPath(rule, object) {
 							return true
 						}
-						task := strings.Split(strings.ToLower(object), ".")[0] == "task"
-						if list, ok := projection.([]any); ok {
-							for _, field := range list {
-								if s, ok := field.(string); ok && (contentField(rule, s) || (task && taskTextField(rule, s))) {
-									return true
-								}
+						task := rule == "message-content" && strings.Split(strings.ToLower(object), ".")[0] == "task"
+						list, ok := projection.([]any)
+						if task && !ok {
+							return true
+						}
+						for _, field := range list {
+							s, ok := field.(string)
+							if contentField(rule, s) || task && (!ok || !taskField(s, object == "task.lead")) {
+								return true
 							}
 						}
 					}
 				case string:
-					if contentField(rule, fields) || taskTextField(rule, fields) {
+					if contentField(rule, fields) {
 						return true
 					}
 				}

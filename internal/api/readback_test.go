@@ -138,7 +138,7 @@ func TestWriteRejectsInvalidProjectionKeysBeforeHTTP(t *testing.T) {
 	}
 }
 
-func TestUnverifiedWriteEchoContainsOnlySuppliedFields(t *testing.T) {
+func TestUnverifiedWriteEchoContainsOnlyID(t *testing.T) {
 	for _, tc := range []struct {
 		name, method, id string
 		status           int
@@ -163,7 +163,7 @@ func TestUnverifiedWriteEchoContainsOnlySuppliedFields(t *testing.T) {
 			}
 			v, err := c.Write(context.Background(), tc.method, path, map[string]any{"is_complete": false, "custom.cf_demo": json.Number("9007199254740993")})
 			var e *errfmt.Error
-			want := map[string]any{"id": tc.id, "is_complete": false, "custom.cf_demo": json.Number("9007199254740993")}
+			want := map[string]any{"id": tc.id}
 			if !errors.As(err, &e) || e.Code != 9 || !reflect.DeepEqual(v, want) {
 				t.Fatalf("result=%v err=%v, want=%v and exit 9", v, err, want)
 			}

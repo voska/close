@@ -57,7 +57,7 @@ func TestPolicyRefusesFullReadbackFallback(t *testing.T) {
 			if !errors.As(err, &e) || e.Code != 9 || !strings.Contains(e.Message, "message-content") || reads != 1 || writes != 1 {
 				t.Fatalf("err=%v reads=%d writes=%d", err, reads, writes)
 			}
-			if !reflect.DeepEqual(v, map[string]any{"id": "demo", tc.field: "Demo"}) {
+			if !reflect.DeepEqual(v, map[string]any{"id": "demo"}) {
 				t.Fatalf("unverified echo exposed unsupplied fields: %v", v)
 			}
 		})

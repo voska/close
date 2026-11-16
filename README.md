@@ -209,8 +209,8 @@ and compares the ID and supplied fields. Successful stdout contains that
 observed record, normally just the requested ID and supplied keys; callers
 that need other fields must request a separate permitted read. Server normalization can make that
 inconclusive: exit 9 includes the observed record on stdout. If no read-back is
-available, stdout contains only `id` and supplied top-level keys present in the
-write echo; it is unverified. Empty body keys and keys containing commas or
+available, stdout contains only `id` from the write echo (or an empty object if
+absent); it is unverified. Empty body keys and keys containing commas or
 whitespace are usage errors (exit 2) before the write is sent. Delete verification
 requires an individual GET returning 404. A repeated delete verifies absence
 and reports `deleted: false, already_absent: true`. Investigate exit 9 before retrying
@@ -258,17 +258,36 @@ Policy denials also apply to `--dry-run`.
 | `raw-api` | Every `close api` invocation, including GET and search. |
 | `writes` | Every mutation. GET and POST `/data/search/` remain reads. |
 
-With `message-content` denied, task and lead `list`/`get` need an explicit
-`--api-fields` projection. Leads embed tasks, so full lead reads and projections
-of `tasks` are also refused. For example, `close task list --api-fields
-id,_type,date,is_complete` and `close lead get lead_demo --api-fields id,name` are
-allowed. Local `--fields` does not narrow the HTTP read. Subject fields,
-`body_preview`, `voicemail_url`, `recording_url` and `attachments` are refused in
-projections (including search) and request bodies. A rejected verification
-projection cannot fall back to a full task or lead read under this rule. Task
-projections and body keys also refuse `text`, which contains the message body on
-inbound SMS tasks, including `task.*` search projections. Search conditions referencing `text` are refused
-even without an explicit object type.
+With `message-content` denied, task and lead `list`/`get` need an explicit,
+nonempty `--api-fields` projection with no empty items. Task fields must be in
+this metadata allowlist:
+
+```text
+id, _type, lead_id, lead_name, contact_id, contact_name, assigned_to,
+assigned_to_name, created_by, created_by_name, updated_by, updated_by_name,
+date, due_date, date_created, date_updated, is_complete, is_dateless,
+priority, organization_id
+```
+
+Task `text` is additionally allowed on lists pinned with exactly one
+`--filter _type=lead` and no `_type__in` filter, for example
+`close task list --filter _type=lead --api-fields id,lead_id,text,date`.
+Task `get` cannot return `text`. Search projections use the same allowlist for
+every `task.*` object; only `task.lead` may request `text`. Search conditions
+referencing `text` remain refused, even without an explicit object type.
+
+Task writes may set `text`. If policy refuses their normal individual
+verification read, the CLI makes one projected list read pinned to
+`id=<written-id>&_type=lead`, using the same sorted fields. It verifies the
+single returned row. Zero or multiple rows exit 9 with only the write ID;
+a failed pinned read never falls back to an unpinned read.
+
+Leads embed tasks, so full lead reads and projections of `tasks` are refused.
+`close lead get lead_demo --api-fields id,name` remains allowed. Local
+`--fields` does not narrow the HTTP read. Subject fields, `body_preview`,
+`voicemail_url`, `recording_url` and `attachments` remain refused in projections
+(including search) and request bodies. A rejected verification projection
+cannot fall back to a full task or lead read under this rule.
 
 Policy checks request paths, fields and body keys; it does not redact response
 bodies. Pair content restrictions with `raw-api` to refuse raw writes that may

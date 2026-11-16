@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -29,7 +32,12 @@ func TestDeploymentPolicyRefusesBeforeHTTP(t *testing.T) {
 		{"message-content", []string{"task", "list", "--api-fields", "body_preview"}},
 		{"message-content", []string{"task", "list", "--filter", "_type=incoming_sms", "--api-fields", "id,text"}},
 		{"message-content", []string{"task", "get", "task_demo", "--api-fields", "id,text"}},
-		{"message-content", []string{"task", "update", "task_demo", "--data", `{"text":""}`, "--confirm"}},
+		{"message-content", []string{"task", "list", "--api-fields", "id,text"}},
+		{"message-content", []string{"task", "list", "--filter", "_type=lead", "--filter", "_type__in=lead,incoming_sms", "--api-fields", "id,text"}},
+		{"message-content", []string{"task", "list", "--filter", "_type=lead", "--filter", "_type=lead", "--api-fields", "id,text"}},
+		{"message-content", []string{"task", "list", "--api-fields", "id,remote_phone"}},
+		{"message-content", []string{"task", "list", "--api-fields", "id,made_up"}},
+		{"message-content", []string{"search", "--data", `{"_fields":{"task.voicemail":["remote_phone"]}}`}},
 		{"message-content", []string{"search", "--data", `{"_fields":{"task.incoming_sms":["text"]}}`}},
 		{"message-content", []string{"search", "--data", `{"query":{"field_name":"text","object_type":"task.incoming_sms"}}`}},
 		{"message-content", []string{"task", "get", "task_demo", "--api-fields", "subject,voicemail_url,attachments"}},
@@ -74,7 +82,7 @@ func TestDeploymentPolicyRefusesBeforeHTTP(t *testing.T) {
 }
 
 func TestDeploymentPolicyAllowsLocalDiscoveryAndReads(t *testing.T) {
-	for _, args := range [][]string{{"version"}, {"schema", "exit-codes"}, {"lead", "--help"}, {"completion", "bash"}, {"lead", "list", "--api-fields", "id,name"}, {"task", "list", "--api-fields", "id,_type,date,is_complete"}, {"task", "get", "task_demo", "--api-fields", "id,_type,date,is_complete"}, {"search", "--data", `{"query":{},"_fields":{"lead":["id","name"]}}`}} {
+	for _, args := range [][]string{{"task", "list", "--filter", "_type=lead", "--api-fields", "id,lead_id,text,date"}, {"search", "--data", `{"_fields":{"task.lead":["text"]}}`}, {"version"}, {"schema", "exit-codes"}, {"lead", "--help"}, {"completion", "bash"}, {"lead", "list", "--api-fields", "id,name"}, {"task", "list", "--api-fields", "id,_type,date,is_complete"}, {"task", "get", "task_demo", "--api-fields", "id,_type,date,is_complete"}, {"search", "--data", `{"query":{},"_fields":{"lead":["id","name"]}}`}} {
 		var out, stderr bytes.Buffer
 		code := Execute(context.Background(), args, Dependencies{Out: &out, Err: &stderr, LoadPolicy: func() (*policy.Policy, error) {
 			return &policy.Policy{Version: 1, Deny: []string{"writes", "raw-api", "message-content", "ai-summaries"}}, nil
@@ -115,7 +123,7 @@ func TestTaskWriteOutputOnVerificationFailure(t *testing.T) {
 	}{
 		{"empty-key", `{"is_complete":false,"":0}`, 200, 2, 0},
 		{"comma-key", `{"is_complete":false,"x,":0}`, 200, 2, 0},
-		{"space-key", `{"is_complete":false," ":0}`, 200, 2, 0},
+		{"space-key", `{"is_complete":false," x":0}`, 200, 2, 0},
 		{"refused-fallback", `{"is_complete":false}`, 400, 9, 1},
 		{"server-error", `{"is_complete":false}`, 503, 9, 1},
 	} {
@@ -150,9 +158,63 @@ func TestTaskWriteOutputOnVerificationFailure(t *testing.T) {
 			}
 			if tc.code == 9 {
 				var v map[string]any
-				if err := json.Unmarshal(out.Bytes(), &v); err != nil || len(v) != 2 || v["id"] != "task_demo" || v["is_complete"] != false {
+				if err := json.Unmarshal(out.Bytes(), &v); err != nil || len(v) != 1 || v["id"] != "task_demo" {
 					t.Fatal("wrong unverified output", out.String(), err)
 				}
+			}
+		})
+	}
+}
+
+func TestTaskTextWriteUsesLeadPinnedReadback(t *testing.T) {
+	for i, rows := range []string{`[{"id":"task_demo","lead_id":"lead_x","text":"Call back"}]`, `[]`, `[{},{}]`, `[null]`} {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			empty := i != 0
+			var out, stderr bytes.Buffer
+			var requests []string
+			args := []string{"task", "create", "--data", `{"lead_id":"lead_x","text":"Call back"}`, "--confirm"}
+			if empty {
+				args = []string{"task", "update", "task_sms", "--data", `{"text":"x"}`, "--confirm"}
+			}
+			code := Execute(context.Background(), args, Dependencies{
+				Out: &out, Err: &stderr,
+				LoadPolicy: func() (*policy.Policy, error) {
+					return &policy.Policy{Version: 1, Deny: []string{"message-content"}}, nil
+				},
+				Getenv: func(k string) string {
+					if k == "CLOSE_API_KEY" {
+						return "fixture-key"
+					}
+					return ""
+				},
+				Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					requests = append(requests, r.Method+" "+r.URL.Path)
+					reply := `{"id":"task_demo","text":"SECRET_SMS_BODY","body_preview":"SECRET_EMAIL_BODY"}`
+					if empty {
+						reply = `{"id":"task_sms","text":"SECRET_SMS_BODY","body_preview":"SECRET_EMAIL_BODY"}`
+					}
+					if r.Method == "GET" {
+						want := url.Values{"id": {"task_demo"}, "_type": {"lead"}, "_fields": {"id,lead_id,text"}}
+						reply = `{"data":` + rows + `}`
+						if empty {
+							want.Set("_fields", "id,text")
+							want.Set("id", "task_sms")
+						}
+						if r.URL.Path != "/api/v1/task/" || !reflect.DeepEqual(r.URL.Query(), want) {
+							t.Errorf("unexpected verification: %s", r.URL)
+						}
+					}
+					return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(reply))}, nil
+				}),
+			}, Build{})
+			wantCode := 0
+			want := map[string]any{"id": "task_demo", "lead_id": "lead_x", "text": "Call back"}
+			if empty {
+				wantCode, want = 9, map[string]any{"id": "task_sms"}
+			}
+			var got map[string]any
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil || code != wantCode || !reflect.DeepEqual(got, want) || len(requests) != 2 {
+				t.Fatalf("code=%d out=%s err=%s requests=%v", code, out.String(), stderr.String(), requests)
 			}
 		})
 	}
