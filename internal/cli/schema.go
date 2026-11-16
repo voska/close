@@ -51,7 +51,7 @@ func (a *app) addSchema() {
 		v := commandSchema(target)
 		if target == a.root {
 			v["exit_codes"] = errfmt.ExitCodes
-			v["output_contract"] = map[string]any{"default": "json", "list": "API envelope with data array and pagination metadata", "errors": "stderr: {error: {code,type,message,http_status?,request_id?}}", "raw_writes": "exit 9; submitted, unverified"}
+			v["output_contract"] = map[string]any{"default": "json", "list": "API envelope with data array and pagination metadata", "errors": "stderr: {error: {code,type,message,http_status?,request_id?,rule?}}", "raw_writes": "exit 9; submitted, unverified"}
 		}
 		return a.print(v)
 	}})

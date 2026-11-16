@@ -15,15 +15,17 @@ import (
 	"github.com/voska/close/internal/auth"
 	"github.com/voska/close/internal/errfmt"
 	"github.com/voska/close/internal/output"
+	"github.com/voska/close/internal/policy"
 )
 
 type Dependencies struct {
-	In        io.Reader
-	Out       io.Writer
-	Err       io.Writer
-	Getenv    func(string) string
-	Store     auth.Store
-	Transport http.RoundTripper
+	In         io.Reader
+	Out        io.Writer
+	Err        io.Writer
+	Getenv     func(string) string
+	Store      auth.Store
+	Transport  http.RoundTripper
+	LoadPolicy func() (*policy.Policy, error)
 }
 
 type Build struct {
@@ -35,6 +37,7 @@ type Build struct {
 type app struct {
 	dep                                            Dependencies
 	build                                          Build
+	policy                                         *policy.Policy
 	root                                           *cobra.Command
 	mode, fields, account                          string
 	json, plain, quiet, readonly, noInput, noColor bool
@@ -56,6 +59,9 @@ func Execute(ctx context.Context, args []string, dep Dependencies, build Build) 
 	}
 	if dep.Store == nil {
 		dep.Store = auth.Keychain{}
+	}
+	if dep.LoadPolicy == nil {
+		dep.LoadPolicy = policy.Load
 	}
 	a := &app{dep: dep, build: build}
 	root := a.command()
@@ -97,6 +103,19 @@ func (a *app) command() *cobra.Command {
 	f.BoolVar(&a.noColor, "no-color", false, "Disable color (output never contains terminal color codes)")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return errfmt.New(2, "usage", "%s", err) })
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		local := localCommand(cmd)
+		if !local {
+			var err error
+			a.policy, err = a.dep.LoadPolicy()
+			if err != nil {
+				return err
+			}
+			if cmd.Name() == "api" {
+				if err := a.policy.CheckRaw(); err != nil {
+					return err
+				}
+			}
+		}
 		if !cmd.Flags().Changed("json") && !cmd.Flags().Changed("plain") && !cmd.Flags().Changed("output") {
 			a.json = a.dep.Getenv("CLOSE_JSON") == "1"
 			a.plain = a.dep.Getenv("CLOSE_PLAIN") == "1"
@@ -181,6 +200,9 @@ func (a *app) client() (*api.Client, error) {
 
 func (a *app) newClient(secret string, bearer bool) (*api.Client, error) {
 	c, err := api.New(a.origin(), secret, bearer, a.timeout)
+	if err == nil {
+		c.Policy = a.policy
+	}
 	if err == nil && a.dep.Transport != nil {
 		c.HTTP.Transport = a.dep.Transport
 	}
@@ -211,4 +233,17 @@ func (a *app) result(v map[string]any, err error) error {
 		}
 	}
 	return err
+}
+
+func localCommand(cmd *cobra.Command) bool {
+	if cmd == cmd.Root() {
+		return true
+	}
+	for c := cmd; c != nil; c = c.Parent() {
+		switch c.Name() {
+		case "help", "version", "schema", "completion", "__complete", "__completeNoDesc":
+			return true
+		}
+	}
+	return cmd.CommandPath() == "close auth status" && cmd.Flags().Lookup("offline").Value.String() == "true"
 }

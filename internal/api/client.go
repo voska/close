@@ -15,11 +15,14 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/voska/close/internal/errfmt"
+	"github.com/voska/close/internal/policy"
 )
 
 const DefaultURL = "https://api.close.com/api/v1/"
@@ -31,6 +34,7 @@ type Client struct {
 	Secret string
 	Bearer bool
 	Wait   func(context.Context, time.Duration) error
+	Policy *policy.Policy
 }
 
 func New(origin, secret string, bearer bool, timeout time.Duration) (*Client, error) {
@@ -79,6 +83,9 @@ func Endpoint(path string) (string, error) {
 func (c *Client) Do(ctx context.Context, method, path string, query url.Values, body map[string]any, retry bool) (map[string]any, error) {
 	p, err := Endpoint(path)
 	if err != nil {
+		return nil, err
+	}
+	if err := c.Policy.Check(method, p, query, body); err != nil {
 		return nil, err
 	}
 	u := *c.Base
@@ -293,6 +300,18 @@ func (c *Client) List(ctx context.Context, method, path string, query url.Values
 }
 
 func (c *Client) Write(ctx context.Context, method, path string, body map[string]any) (map[string]any, error) {
+	fields := map[string]bool{"id": true}
+	for key := range body {
+		if key == "" || strings.Contains(key, ",") || strings.IndexFunc(key, unicode.IsSpace) >= 0 {
+			return nil, errfmt.New(2, "usage", "write body keys must be non-empty and contain no commas or whitespace")
+		}
+		fields[key] = true
+	}
+	names := make([]string, 0, len(fields))
+	for key := range fields {
+		names = append(names, key)
+	}
+	sort.Strings(names)
 	v, err := c.Do(ctx, method, path, nil, body, false)
 	var e *errfmt.Error
 	alreadyAbsent := method == "DELETE" && errors.As(err, &e) && e.Code == 5
@@ -302,21 +321,43 @@ func (c *Client) Write(ctx context.Context, method, path string, body map[string
 		}
 		return nil, err
 	}
+	// A write echo is not a verified read and may include restricted content.
+	echo := map[string]any{}
+	if id, ok := v["id"]; ok {
+		echo["id"] = id
+	}
 	verifyPath := path
 	if method == "POST" {
 		id, ok := v["id"].(string)
 		if !ok || id == "" {
-			return v, unverified("write returned no ID", nil)
+			return echo, unverified("write returned no ID", nil)
 		}
 		if strings.Contains(id, "/") {
-			return v, unverified("write returned invalid ID", nil)
+			return echo, unverified("write returned invalid ID", nil)
 		}
 		if _, err := Endpoint(id); err != nil {
-			return v, unverified("write returned invalid ID", nil)
+			return echo, unverified("write returned invalid ID", nil)
 		}
 		verifyPath = strings.TrimSuffix(path, "/") + "/" + id + "/"
 	}
-	observed, err := c.Do(ctx, "GET", verifyPath, nil, nil, true)
+	projection := strings.Join(names, ",")
+	observed, err := c.Do(ctx, "GET", verifyPath, url.Values{"_fields": {projection}}, nil, true)
+	parts := strings.Split(strings.Trim(verifyPath, "/"), "/")
+	if errors.As(err, &e) && e.Code == 11 && parts[0] == "task" && fields["text"] {
+		observed, err = c.Do(ctx, "GET", "task/", url.Values{"id": {parts[len(parts)-1]}, "_type": {"lead"}, "_fields": {projection}}, nil, true)
+		if err == nil {
+			rows, _ := observed["data"].([]any)
+			observed = nil
+			if len(rows) == 1 {
+				observed, _ = rows[0].(map[string]any)
+			}
+			if observed == nil {
+				return echo, unverified("write submitted; lead-task read-back did not return exactly one object", nil)
+			}
+		}
+	} else if fieldsUnsupported(err) {
+		observed, err = c.Do(ctx, "GET", verifyPath, nil, nil, true)
+	}
 	if method == "DELETE" {
 		if errors.As(err, &e) && e.Code == 5 {
 			parts := strings.Split(strings.Trim(path, "/"), "/")
@@ -329,13 +370,56 @@ func (c *Client) Write(ctx context.Context, method, path string, body map[string
 		return observed, unverified("delete submitted; absence could not be verified", err)
 	}
 	if err != nil {
-		return v, unverified("write submitted; read-back failed", err)
+		return echo, unverified("write submitted; read-back failed", err)
 	}
-	parts := strings.Split(strings.Trim(verifyPath, "/"), "/")
 	if observed["id"] != parts[len(parts)-1] || !Subset(body, observed) {
 		return observed, unverified("write submitted; read-back did not match the ID and supplied fields", nil)
 	}
 	return observed, nil
+}
+
+func fieldsUnsupported(err error) bool {
+	var e *errfmt.Error
+	if !errors.As(err, &e) || (e.HTTPStatus != 400 && e.HTTPStatus != 422) {
+		return false
+	}
+
+	_, detail, ok := strings.Cut(e.Message, ": ")
+	if !ok {
+		return false
+	}
+	response, err := Decode([]byte(detail))
+	if err != nil {
+		return false
+	}
+	fieldError := response["_fields"]
+	if nested, ok := response["errors"].(map[string]any); ok {
+		fieldError = nested["_fields"]
+	}
+	if fieldError != nil {
+		encoded, _ := json.Marshal(fieldError)
+		reason := strings.ToLower(string(encoded))
+		for _, phrase := range []string{`"not supported"`, `"not allowed"`, "unknown query parameter", "unexpected query parameter", "unrecognized query parameter", "unsupported query parameter"} {
+			if strings.Contains(reason, phrase) {
+				return true
+			}
+		}
+	}
+	for _, key := range []string{"error", "message"} {
+		message, ok := response[key].(string)
+		if !ok {
+			continue
+		}
+		message = strings.ToLower(message)
+		message = strings.Join(strings.Fields(strings.NewReplacer("\"", " ", "'", " ", "`", " ", ":", " ").Replace(message)), " ")
+		for _, phrase := range []string{"_fields is not supported", "_fields parameter is not supported", "unknown query parameter _fields", "unexpected query parameter _fields", "unrecognized query parameter _fields", "unsupported query parameter _fields"} {
+			if strings.Contains(message, phrase) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func unverified(message string, cause error) *errfmt.Error {

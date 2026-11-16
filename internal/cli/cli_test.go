@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/voska/close/internal/policy"
 )
 
 type memoryStore struct{ key string }
@@ -30,7 +32,7 @@ func run(t *testing.T, args []string, input string, handler http.HandlerFunc) (i
 		env["CLOSE_API_KEY"] = "fixture-key"
 	}
 	var out, stderr bytes.Buffer
-	code := Execute(context.Background(), args, Dependencies{In: strings.NewReader(input), Out: &out, Err: &stderr, Getenv: func(k string) string { return env[k] }, Store: &memoryStore{}}, Build{Version: "test", Commit: "abc", Date: "today"})
+	code := Execute(context.Background(), args, Dependencies{LoadPolicy: noPolicy, In: strings.NewReader(input), Out: &out, Err: &stderr, Getenv: func(k string) string { return env[k] }, Store: &memoryStore{}}, Build{Version: "test", Commit: "abc", Date: "today"})
 	return code, out.String(), stderr.String()
 }
 
@@ -191,7 +193,7 @@ func TestAuthLifecycle(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, stderr bytes.Buffer
-			code := Execute(context.Background(), tc.args, Dependencies{In: strings.NewReader(tc.input), Out: &out, Err: &stderr, Getenv: func(string) string { return "" }, Store: tc.store, Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			code := Execute(context.Background(), tc.args, Dependencies{LoadPolicy: noPolicy, In: strings.NewReader(tc.input), Out: &out, Err: &stderr, Getenv: func(string) string { return "" }, Store: tc.store, Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				if r.URL.String() != "https://api.close.com/api/v1/me/" {
 					t.Fatal(r.URL)
 				}
@@ -269,7 +271,7 @@ func TestExplicitAccountCannotUseInheritedEnvironmentCredential(t *testing.T) {
 	} {
 		var out, stderr bytes.Buffer
 		calls := 0
-		code := Execute(context.Background(), tc.args, Dependencies{Out: &out, Err: &stderr, Store: &memoryStore{}, Getenv: func(k string) string {
+		code := Execute(context.Background(), tc.args, Dependencies{LoadPolicy: noPolicy, Out: &out, Err: &stderr, Store: &memoryStore{}, Getenv: func(k string) string {
 			switch k {
 			case "CLOSE_API_KEY":
 				return "inherited-client-a"
@@ -315,7 +317,7 @@ func TestOutputFlagsOverrideEnvironmentDefaults(t *testing.T) {
 		{"CLOSE_JSON", []string{"version", "--plain"}, false},
 	} {
 		var out, stderr bytes.Buffer
-		code := Execute(context.Background(), tc.args, Dependencies{Out: &out, Err: &stderr, Getenv: func(k string) string {
+		code := Execute(context.Background(), tc.args, Dependencies{LoadPolicy: noPolicy, Out: &out, Err: &stderr, Getenv: func(k string) string {
 			if k == tc.env {
 				return "1"
 			}
@@ -326,3 +328,5 @@ func TestOutputFlagsOverrideEnvironmentDefaults(t *testing.T) {
 		}
 	}
 }
+
+func noPolicy() (*policy.Policy, error) { return nil, nil }

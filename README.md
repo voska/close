@@ -177,7 +177,10 @@ headers, and `--output ndjson` emits one record per line after collection.
 
 `--fields id,name` projects locally and preserves list metadata. Nested paths
 and literal custom-field keys work. `--api-fields` requests `_fields` on typed
-reads. Verification always fetches the full individual record. Output never
+reads. Write verification requests `id` plus the supplied top-level keys,
+including literal `custom.cf_*` keys. It falls back to a full individual record
+only after an explicit HTTP 400/422 rejection of the `_fields` parameter.
+Validation errors, missing fields and mismatches do not broaden the read. Output never
 contains color codes; `NO_COLOR` and `--no-color` need no special handling.
 
 Errors are JSON on stderr. stdout contains data only:
@@ -199,10 +202,16 @@ Errors are JSON on stderr. stdout contains data only:
 | 8 | Transient read/network/server error |
 | 9 | Submitted, unverified or write outcome unknown |
 | 10 | Credential store/configuration error |
+| 11 | Deployment policy refusal; the JSON error names the `rule` |
 
 Writes are never retried. After create/update the CLI reads the saved object
-and compares the ID and supplied fields. Server normalization can make that
-inconclusive: exit 9 includes the observed record on stdout. Delete verification
+and compares the ID and supplied fields. Successful stdout contains that
+observed record, normally just the requested ID and supplied keys; callers
+that need other fields must request a separate permitted read. Server normalization can make that
+inconclusive: exit 9 includes the observed record on stdout. If no read-back is
+available, stdout contains only `id` from the write echo (or an empty object if
+absent); it is unverified. Empty body keys and keys containing commas or
+whitespace are usage errors (exit 2) before the write is sent. Delete verification
 requires an individual GET returning 404. A repeated delete verifies absence
 and reports `deleted: false, already_absent: true`. Investigate exit 9 before retrying
 a create or sending another message.
@@ -211,6 +220,105 @@ Reads retry 429/502/503/504 at most twice, respecting `Retry-After` and legacy
 `rate_reset`. Delays over 30 seconds are returned to the caller instead of
 retrying early. `--timeout` sets the timeout per HTTP request. SIGINT/SIGTERM
 cancel requests and retry waits.
+
+## Deployment restrictions
+
+On Linux and macOS, `close` automatically reads `/etc/close/policy.json`.
+There is no flag or environment override. A missing file preserves unrestricted
+CLI behavior when its existing parent directories are trusted. A present policy
+and every directory or symlink target on its
+path must be owned by root and have no group/world write permission. Dangling
+symlinks and symlink targets containing `..` are refused. ACLs not reflected in mode bits (macOS) are not validated; deployments must
+not grant agents write access through ACLs. Install
+readable policies with mode 0644 and directories with mode 0755. Unreadable,
+malformed, oversized or untrusted policies fail closed with exit 10. Policy
+version 1 requires a `deny` array; unknown fields or rules are configuration
+errors. An empty array is allowed.
+
+The release archives include [policies/restricted-agent.json](policies/restricted-agent.json):
+
+```json
+{"version":1,"deny":["message-content","ai-summaries","deletes","merges","exports","bulk-actions","raw-api"]}
+```
+
+A deployment can install that sample at the fixed path. Add `"writes"` to the
+array for a deployment that permits only reads. These rules apply to every
+credential, account and origin, including loopback fixtures, and cannot be
+lifted with `--readonly=false`, `--confirm`, `--fields`, or environment changes.
+Policy denials also apply to `--dry-run`.
+
+| Rule | Refused operations |
+| --- | --- |
+| `message-content` | Communication activities (email, threads, SMS, calls, meetings, WhatsApp and future activity types), transcripts, message templates, subjects, body previews, recording URLs and attachments. Task/lead reads require explicit API fields excluding communication content and embedded `tasks`. Only typed note/custom activity families remain allowed. |
+| `ai-summaries` | Summary endpoints and fields, plus call, meeting and email-thread records that can contain summaries. |
+| `deletes` | Every DELETE request and delete-action endpoints. |
+| `merges` | Merge endpoints, including lead merges. |
+| `exports` | The export family, including reads of download URLs. |
+| `bulk-actions` | Bulk action families, including reads. |
+| `raw-api` | Every `close api` invocation, including GET and search. |
+| `writes` | Every mutation. GET and POST `/data/search/` remain reads. |
+
+With `message-content` denied, task and lead `list`/`get` need an explicit,
+nonempty `--api-fields` projection with no empty items. Task fields must be in
+this metadata allowlist:
+
+```text
+id, _type, lead_id, lead_name, contact_id, contact_name, assigned_to,
+assigned_to_name, created_by, created_by_name, updated_by, updated_by_name,
+date, due_date, date_created, date_updated, is_complete, is_dateless,
+priority, organization_id
+```
+
+Task `text` is additionally allowed on lists pinned with exactly one
+`--filter _type=lead` and no `_type__in` filter, for example
+`close task list --filter _type=lead --api-fields id,lead_id,text,date`.
+Task `get` cannot return `text`. Search projections use the same allowlist for
+every `task.*` object; only `task.lead` may request `text`. Search conditions
+referencing `text` remain refused, even without an explicit object type.
+
+Task writes may set `text`. If policy refuses their normal individual
+verification read, the CLI makes one projected list read pinned to
+`id=<written-id>&_type=lead`, using the same sorted fields. It verifies the
+single returned row. Zero or multiple rows exit 9 with only the write ID;
+a failed pinned read never falls back to an unpinned read.
+
+Leads embed tasks, so full lead reads and projections of `tasks` are refused.
+`close lead get lead_demo --api-fields id,name` remains allowed. Local
+`--fields` does not narrow the HTTP read. Subject fields, `body_preview`,
+`voicemail_url`, `recording_url` and `attachments` remain refused in projections
+(including search) and request bodies. A rejected verification projection
+cannot fall back to a full task or lead read under this rule.
+
+Policy checks request paths, fields and body keys; it does not redact response
+bodies. Pair content restrictions with `raw-api` to refuse raw writes that may
+echo full records. The shipped sample already denies `raw-api`.
+
+Both content rules refuse aggregate `activity list` and `event` commands even
+when filtered, because those routes can return restricted records. Advanced
+search checks object-type references, requested fields and sort/filter field
+references. Lead/contact/opportunity searches remain available; requesting
+restricted activity or summary content is refused. Normal contact email
+addresses are allowed. Existing `--readonly` and confirmation requirements
+still apply when policy permits an operation.
+
+A refusal makes no HTTP request and produces only an error on stderr:
+
+```json
+{"error":{"code":11,"type":"policy_denied","message":"deployment policy rule \"message-content\" refuses this operation","rule":"message-content"}}
+```
+
+`version`, help, `schema`, completions and `auth status --offline` stay usable
+without loading the policy. Other commands fail closed on an invalid policy.
+Windows deployment policy enforcement is unsupported; Windows does not load
+Unix policies and its ordinary CLI behavior is unchanged.
+
+These restrictions apply to this CLI. Keep credentials scoped with Close's
+server-side roles: another client or an older binary can bypass CLI checks,
+and legacy lead-query filters can reveal whether matching records exist.
+Different per-seat policies require deployments with separate trusted policy
+files; an agent-selected environment variable cannot identify a seat securely.
+Field ownership, workflow evidence and business rules belong in the caller's
+workflow and Close permissions.
 
 ## Full API access
 
@@ -239,7 +347,14 @@ make ci    # format, vet, race tests, >=80% internal coverage, real-binary smoke
 make build
 ```
 
-Tests use synthetic HTTP fixtures and require no Close account. CI runs on
+Tests use synthetic HTTP fixtures and require no Close account. Unit tests
+inject their policy explicitly. Run the real-binary smoke on a build host
+without a deployment policy; it deliberately has no policy override. The optional
+`python3 scripts/policy-smoke.py PATH_TO_LINUX_BINARY` checks root-owned policy
+fixtures in local Docker containers as uid 65534, with networking disabled. Supply
+a Linux binary matching the Docker daemon architecture. `make policy-smoke`
+builds that binary for the local architecture and runs the harness. Linux CI
+and tag checks run this target; macOS runs the ordinary checks. CI runs on
 Linux and macOS with read-only GitHub permissions. GoReleaser supports local
 cross-platform snapshots without publishing. Authenticated live
 Close behavior has not been verified.

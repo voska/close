@@ -145,6 +145,9 @@ func (a *app) addRead(parent *cobra.Command, r resource, object *string) {
 		if err != nil {
 			return err
 		}
+		if err := a.policy.Check("GET", path, q, nil); err != nil {
+			return err
+		}
 		c, err := a.client()
 		if err != nil {
 			return err
@@ -170,6 +173,9 @@ func (a *app) addRead(parent *cobra.Command, r resource, object *string) {
 		q := url.Values{}
 		if apiFields != "" {
 			q.Set("_fields", apiFields)
+		}
+		if err := a.policy.Check("GET", path, q, nil); err != nil {
+			return err
 		}
 		c, err := a.client()
 		if err != nil {
@@ -282,6 +288,9 @@ func (a *app) addWrite(parent *cobra.Command, r resource, action string) {
 			if err != nil {
 				return err
 			}
+		}
+		if err := a.policy.Check(method, path, nil, body); err != nil {
+			return err
 		}
 		if err := a.mutation(f, action == "delete" || r.name == "activity email" || r.name == "activity sms"); err != nil {
 			return err

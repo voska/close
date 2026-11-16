@@ -20,15 +20,42 @@
   or an API error; `--all` emits no partial aggregate on failure. NDJSON emits
   individual records after collection. It is not a live stream.
 - `create|update` consume exactly one JSON object via `--data` or
-  `--data-file PATH|-`. PUT sends only supplied fields. `delete` requires
-  `--confirm`. All email/SMS writes and raw API writes require `--confirm`.
+  `--data-file PATH|-`. PUT sends only supplied fields. Top-level typed-write keys
+  must be non-empty and contain no commas or whitespace; invalid keys exit 2
+  before HTTP. `delete` requires `--confirm`. All email/SMS writes and raw API writes require `--confirm`.
   `--dry-run` previews method, relative path, query and body without credentials
   or network activity. `--readonly` rejects mutations, including raw ones.
-- Every typed write reads the individual object back without field projection
-  or filters. Sent values must be a subset of observed values. Normalized
+- Every typed write reads the individual object back using `_fields=id` plus
+  supplied top-level keys (including literal custom-field keys). Only an explicit
+  HTTP 400/422 rejection of the `_fields` parameter permits one full-record fallback;
+  mismatches never broaden the read. Sent values must be a subset of observed values. Normalized
   values that cannot be compared are reported unverified. A successful delete
   requires GET returning 404. Email/SMS state proves persistence/queue state,
-  never delivery. Raw writes always return submitted/unverified (exit 9).
+  never delivery. When read-back fails or a create returns an invalid/missing ID,
+  unverified stdout contains only `id` from the write echo (or an empty object if
+  absent). Raw writes always return submitted/unverified (exit 9).
+- On Unix, a fixed root-owned `/etc/close/policy.json` restricts command
+  families before HTTP. No flag/env override exists. Version 1 has a required
+  `deny` array of message-content, ai-summaries, deletes, merges, exports,
+  bulk-actions, raw-api and optional writes rules. Missing policy preserves
+  behavior; unreadable/untrusted/invalid policy exits 10. Refusals exit 11 with
+  a named rule, including dry runs. Aggregate activities/events and restricted
+  search projections are refused by content rules. Message-content restrictions
+  require explicit task/lead projections and refuse embedded tasks, subjects,
+  body previews, recording URLs and attachments. Task GET/search projections
+  allow only `id, _type, lead_id, lead_name, contact_id, contact_name, assigned_to,
+  assigned_to_name, created_by, created_by_name, updated_by, updated_by_name,
+  date, due_date, date_created, date_updated, is_complete, is_dateless, priority,
+  organization_id`. GET projections must have no empty items. Additionally,
+  `text` is allowed only on task lists with exactly one `_type=lead` and no
+  `_type__in`, or on `task.lead` search projections. Task writes may set `text`.
+  If policy refuses their individual verification GET, read once through
+  `task/?id=<id>&_type=lead&_fields=<same sorted fields>` and verify its single row.
+  Zero/multiple rows return exit 9 with only the write ID; failed pinned reads
+  never broaden. With no policy, verification uses the individual GET.
+  Search `field_name` references to `text` remain refused even without an object
+  type. Local discovery stays usable.
+  Policies are CLI controls, not server-side permission or process isolation.
 - Never retry writes or follow redirects. Reads (including search POST) retry
   429/502/503/504 at most twice, honoring Retry-After and legacy rate_reset.
   Waits over 30 seconds return a retryable error instead of retrying early.
@@ -52,8 +79,9 @@
 0 success, 1 general/protocol error, 2 usage/API validation, 3 reserved empty
 result (empty lists succeed), 4 authentication, 5 not found, 6 forbidden,
 7 rate limited, 8 transient read/network/server error, 9 submitted/unverified,
-10 credential store/configuration error. Errors have a stable JSON error object
-with code, type, message, optional HTTP status and request ID.
+10 credential store/configuration error, 11 deployment policy refusal. Errors
+have a stable JSON error object with code, type, message, optional HTTP status,
+request ID and policy rule.
 
 ## Implementation and verification
 
@@ -69,7 +97,7 @@ release and stable tags update the shared Homebrew tap and Scoop bucket. Only th
 has write permission and receives the package-repository credential. Builds
 use Go 1.27.3 while retaining Go 1.25 source compatibility.
 
-Sources checked 2026-11-03: [overview](https://developer.close.com/api/overview),
+Sources checked 2026-11-15: [overview](https://developer.close.com/api/overview),
 [pagination](https://developer.close.com/api/overview/pagination),
 [rate limits](https://developer.close.com/api/overview/rate-limits), and the
 [experimental OpenAPI](https://api.close.com/api/openapi.json). The API spec is

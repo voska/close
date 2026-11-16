@@ -8,6 +8,7 @@ type Error struct {
 	Message    string `json:"message"`
 	HTTPStatus int    `json:"http_status,omitempty"`
 	RequestID  string `json:"request_id,omitempty"`
+	Rule       string `json:"rule,omitempty"`
 }
 
 func (e *Error) Error() string { return e.Message }
@@ -18,5 +19,5 @@ func New(code int, kind, format string, args ...any) *Error {
 var ExitCodes = map[int]string{
 	0: "success", 1: "general_error", 2: "usage", 3: "empty_result_reserved",
 	4: "authentication", 5: "not_found", 6: "forbidden", 7: "rate_limited",
-	8: "retryable", 9: "unverified", 10: "configuration",
+	8: "retryable", 9: "unverified", 10: "configuration", 11: "policy_denied",
 }
