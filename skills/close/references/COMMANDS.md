@@ -57,12 +57,36 @@ set defaults. Explicit keychain account selection conflicts with either
 or `_skip` filters on typed lists. `event list` uses `--filter _cursor=TOKEN`.
 Events cover 30 days; offset deduplication does not provide snapshot isolation.
 
+Under a `message-content` deployment policy, `task` and `lead` `list`/`get`
+exit 11 unless `--api-fields` names the fields to fetch, with no empty items,
+for example `id,_type,date,is_complete,lead_id` or `id,display_name`. `--fields`
+is local and does not narrow the request. `subject`, `body_preview`,
+`voicemail_url`, `recording_url`, `attachments` and a lead's embedded `tasks`
+are refused in every projection, search included, and as request-body keys.
+
+Under that rule a task projection, in `task list`/`get` or for any `task`
+object in a search, may name only these fields:
+
+```text
+id, _type, lead_id, lead_name, contact_id, contact_name, assigned_to,
+assigned_to_name, created_by, created_by_name, updated_by, updated_by_name,
+date, due_date, date_created, date_updated, is_complete, is_dateless,
+priority, organization_id
+```
+
+Task `text` is the message body on inbound SMS tasks, so it can be read only
+for lead tasks: add it to a `task list` that has exactly one
+`--filter _type=lead` and no `_type__in` filter, or to a `task.lead` search
+projection. `task get` never returns it. A search condition on `field_name`
+`text` is refused for any object.
+
 `custom-field --object` accepts `lead`, `contact`, `opportunity`, `activity`,
 `shared` or `custom_object_type`.
 
 ```sh
-close --readonly lead list --all --fields id,display_name
+close --readonly lead list --all --api-fields id,display_name --fields id,display_name
 close --readonly contact list --filter lead_id=lead_demo
+close --readonly task list --filter _type=lead --api-fields id,lead_id,text,date
 close --readonly activity list --filter _type=Note
 close --readonly custom-field list --object contact
 close --readonly event list --filter object_type=lead --filter action=updated
@@ -71,18 +95,28 @@ close --readonly event list --filter object_type=lead --filter action=updated
 ## Typed mutations
 
 `create`/`update ID` take exactly one object via `--data JSON` or
-`--data-file PATH|-`. Updates send only supplied fields. `--dry-run`/`-n`
-previews method, path, query and body with no network or credential requirement.
-`--readonly` rejects all CRM mutations, including dry runs.
+`--data-file PATH|-`. Updates send only supplied fields. A write whose
+top-level keys are empty or contain a comma or whitespace exits 2 before it is
+sent. `--dry-run`/`-n` previews method, path, query and body with no network or
+credential requirement. `--readonly` rejects all CRM mutations, including dry runs.
 
 Deletes require `--confirm`; lead deletion cascades to related CRM records.
 Every email/SMS mutation requires `--confirm`, including draft creation/update.
 Stored or queued state never proves delivery. There is no automatic write retry.
 
-Successful create/update reads the individual object back and compares the ID
-and supplied fields. Server normalization may make this inconclusive. Exit 9
-means submitted/unverified or unknown outcome; inspect any observed stdout
-record plus the stderr error before retrying. Successful deletion verifies
+Successful create/update requests only `id` and supplied top-level keys during
+read-back, compares their values and prints that observed record. A full-record
+fallback requires an explicit HTTP 400/422 rejection of the `_fields` parameter
+and stays subject to deployment policy; a refused fallback exits 9.
+Server normalization may make this inconclusive. Exit 9
+means submitted/unverified or unknown outcome; inspect stdout plus the stderr
+error before retrying. On a mismatch stdout is the observed record. When
+read-back fails or is refused, or a create returns no usable ID, stdout is only
+the `id` from Close's write response, or `{}` if it has none, unverified.
+Under `message-content`, task writes may set `text`; they are read back through
+one `task` list request pinned to the written ID and `_type=lead`, and exit 9
+if that does not return exactly one task.
+Successful deletion verifies
 an individual GET returning 404. Repeated deletion reports
 `deleted: false, already_absent: true` after verifying absence.
 
@@ -133,7 +167,10 @@ Errors are stderr JSON: `{"error":{"code":4,"type":"authentication","message":".
 0 success; 1 general/protocol; 2 usage/API validation; 3 reserved (empty lists
 exit 0); 4 authentication; 5 not found; 6 forbidden; 7 rate limited;
 8 transient read/network/server; 9 submitted/unverified or outcome unknown;
-10 credential store/configuration. `close schema exit-codes` is authoritative.
+10 credential store/configuration; 11 deployment policy refusal with a named
+`rule`. `close schema exit-codes` is authoritative. Deployment policy can refuse
+raw API and aggregate activity/event examples above; prefer typed note/custom
+activity reads when those families are permitted.
 
 Reads retry 429/502/503/504 at most twice and respect `Retry-After`/`rate_reset`.
 Delays over 30 seconds return to the caller. Writes never retry automatically.
