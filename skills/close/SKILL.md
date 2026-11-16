@@ -79,15 +79,25 @@ does not revoke it or unset the caller's environment.
   discovery work. Release archives include a `policies/restricted-agent.json`
   sample. These are CLI controls: use Close server permissions too.
 - Under `message-content`, `task` and `lead` `list`/`get` are refused unless
-  `--api-fields` names the fields to fetch, for example
+  `--api-fields` names the fields to fetch, with no empty items, for example
   `id,_type,date,is_complete,lead_id` for tasks or `id,display_name` for leads.
   Local `--fields` does not narrow the request. Asking for permitted fields
   this way is the intended read, not a way around the rule. `subject`,
   `body_preview`, `voicemail_url`, `recording_url`, `attachments` and a lead's
   embedded `tasks` are refused in every projection, search included, and as
-  request-body keys. Both content rules refuse aggregate activities/events; use
-  typed note/custom commands for allowed activity reads. Search also checks
-  object references and fields.
+  request-body keys. Both content rules refuse aggregate activities/events;
+  use typed note/custom commands for allowed activity reads. Search also
+  checks object references and fields.
+- Under `message-content`, a task projection (`task list`/`get`, or any `task`
+  object in a search) may name only `id`, `_type`, `lead_id`, `lead_name`,
+  `contact_id`, `contact_name`, `assigned_to`, `assigned_to_name`, `created_by`,
+  `created_by_name`, `updated_by`, `updated_by_name`, `date`, `due_date`,
+  `date_created`, `date_updated`, `is_complete`, `is_dateless`, `priority` and
+  `organization_id`. Task `text` is the message body on inbound SMS tasks, so
+  it can be read only for lead tasks: add it to a `task list` that has exactly
+  one `--filter _type=lead` and no `_type__in` filter, or to a `task.lead`
+  search projection. `task get` never returns it, and a search condition on
+  `field_name` `text` is refused for any object. Task writes may set `text`.
 
 ## Response structure and output
 
@@ -100,7 +110,15 @@ keys. Only an explicit HTTP 400/422 rejection of the `_fields` parameter permits
 a full-record fallback, and policy still applies to it: a refused fallback sends
 no full-record GET and exits 9. Mismatches and ordinary validation errors never
 broaden the read. A successful write prints that observed record, normally only
-`id` and the supplied keys; read other fields separately.
+`id` and the supplied keys; read other fields separately. Under
+`message-content`, a task write that sets `text` is read back through one
+`task` list request pinned to the written ID and `_type=lead`; if that does not
+return exactly one task, for instance because it is not a lead task, the write
+exits 9. When read-back fails or is refused, or a create returns no usable ID,
+exit 9 stdout is not an observed record: it holds only the `id` from Close's
+write response, or `{}` if it has none, and is unverified. A write whose
+top-level keys are empty or contain a comma or whitespace exits 2 before it is
+sent.
 
 ```sh
 close --readonly lead list --api-fields id,display_name --fields id,display_name --json
@@ -117,7 +135,9 @@ close --readonly event list --all --output ndjson
 
 Errors are JSON on stderr, for example
 `{"error":{"code":4,"type":"authentication","message":"...","http_status":401}}`.
-Exit 9 can also carry the observed record on stdout; inspect both streams.
+Exit 9 can also print a record on stdout: the observed read-back when it did
+not match, or only the write response's `id` (`{}` without one) when
+read-back failed or was refused. Inspect both streams.
 
 ## Common patterns
 
@@ -128,6 +148,9 @@ IDs below are synthetic; substitute IDs read from the authorized account.
 close --readonly contact list --filter lead_id=lead_demo --limit 100
 close --readonly custom-field list --object lead --fields id,name,type
 close --readonly pipeline list
+
+# Lead tasks with their text; other task reads take metadata fields only
+close --readonly task list --filter _type=lead --api-fields id,lead_id,text,date
 
 # Preview a sparse update without making a request
 close task update task_demo --data '{"is_complete":true}' --dry-run
