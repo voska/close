@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Retry an empty lead-task creation read-back twice after waits of one and
+  four seconds. A persistent miss still exits 9 with only the written ID.
 - Request only the ID and written fields during verification, with a full-record
   fallback only when the endpoint explicitly rejects the field selector. Successful
   write stdout is the observed record, normally limited to those requested keys;
@@ -16,7 +18,8 @@
   Task reads and `task.*` search projections use the metadata allowlist documented
   in README. Task `text` is allowed only on lists with exactly one `_type=lead`
   and no `_type__in`, or in `task.lead` search projections. Task writes may set
-  `text`; policy-refused verification uses one ID/lead-pinned list read.
+  `text`; policy-refused verification reads the list pinned to the ID and
+  `_type=lead`.
   Search conditions on `text` remain refused. Other content checks still refuse
   previews, subjects, recordings and attachments.
 

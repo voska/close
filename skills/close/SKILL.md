@@ -111,10 +111,11 @@ a full-record fallback, and policy still applies to it: a refused fallback sends
 no full-record GET and exits 9. Mismatches and ordinary validation errors never
 broaden the read. A successful write prints that observed record, normally only
 `id` and the supplied keys; read other fields separately. Under
-`message-content`, a task write that sets `text` is read back through one
-`task` list request pinned to the written ID and `_type=lead`; if that does not
-return exactly one task, for instance because it is not a lead task, the write
-exits 9. When read-back fails or is refused, or a create returns no usable ID,
+`message-content`, a task write that sets `text` is read back through the
+`task` list pinned to the written ID and `_type=lead`. If the list is empty
+after a create, the CLI retries the read up to twice over five seconds.
+Verification requires exactly one task. When read-back fails or is refused, or
+a create returns no usable ID,
 exit 9 stdout is not an observed record: it holds only the `id` from Close's
 write response, or `{}` if it has none, and is unverified. A write whose
 top-level keys are empty or contain a comma or whitespace exits 2 before it is

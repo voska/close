@@ -49,10 +49,13 @@
   organization_id`. GET projections must have no empty items. Additionally,
   `text` is allowed only on task lists with exactly one `_type=lead` and no
   `_type__in`, or on `task.lead` search projections. Task writes may set `text`.
-  If policy refuses their individual verification GET, read once through
+  If policy refuses their individual verification GET, read through
   `task/?id=<id>&_type=lead&_fields=<same sorted fields>` and verify its single row.
-  Zero/multiple rows return exit 9 with only the write ID; failed pinned reads
-  never broaden. With no policy, verification uses the individual GET.
+  After a create, an empty list allows up to two more reads with waits of one
+  and four seconds. Each extra read makes one HTTP request. Zero rows on the
+  final read or multiple rows return exit 9 with only the write ID. Every retry
+  keeps the same filters and fields. With no policy, verification uses the
+  individual GET.
   Search `field_name` references to `text` remain refused even without an object
   type. Local discovery stays usable.
   Policies are CLI controls, not server-side permission or process isolation.

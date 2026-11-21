@@ -79,6 +79,8 @@ class Handler(BaseHTTPRequestHandler):
 class PolicyHandler(Handler):
     requests = []
     verify_status = 200
+    task_visibility_delay = 0
+    task_first_lookup_at = None
     echo = {"id": "task_demo", "text": "SECRET_SMS_BODY", "body_preview": "SECRET_EMAIL_BODY",
             "attachments": ["SECRET_MMS"], "tasks": [{"text": "SECRET_EMBEDDED_TASK"}]}
 
@@ -92,11 +94,15 @@ class PolicyHandler(Handler):
         if self.verify_status != 200:
             self.respond({"error": "_fields is not supported"}, self.verify_status)
             return
-        record = {"id": "task_demo", "lead_id": "lead_x", "text": "Call back", "date": "2026-11-15"}
+        record = {"id": "task_demo", "_type": "lead", "lead_id": "lead_x", "text": "Call back", "date": "2026-11-15"}
         fields = query.get("_fields", [""])[0].split(",")
         record = {k: v for k, v in record.items() if k in fields}
         if parsed.path == "/api/v1/task/":
-            self.respond({"data": [] if query.get("id") == ["task_sms"] else [record]})
+            now = time.monotonic()
+            if self.task_first_lookup_at is None:
+                type(self).task_first_lookup_at = now
+            visible = now - self.task_first_lookup_at >= self.task_visibility_delay
+            self.respond({"data": [record] if visible and query.get("id") != ["task_sms"] else []})
         else:
             self.respond(record)
 
@@ -130,14 +136,19 @@ def policy_checks(run):
         assert run(*args, code=11) is None
         assert not PolicyHandler.requests, PolicyHandler.requests
     run("search", "--data", '{"_fields":{"task.lead":["text"]}}')
-    PolicyHandler.requests.clear()
-    observed = run("task", "create", "--data", '{"lead_id":"lead_x","text":"Call back"}', "--confirm")
-    assert observed == {"id": "task_demo", "lead_id": "lead_x", "text": "Call back"}
-    assert PolicyHandler.requests == [
-        ["POST", "/api/v1/task/", {"lead_id": "lead_x", "text": "Call back"}],
-        ["GET", "/api/v1/task/", {"id": ["task_demo"], "_type": ["lead"], "_fields": ["id,lead_id,text"]}],
-    ], PolicyHandler.requests
-    print("Pinned task verification:", json.dumps(PolicyHandler.requests))
+    body = {"_type": "lead", "lead_id": "lead_x", "text": "Call back"}
+    post = ["POST", "/api/v1/task/", body]
+    lookup = ["GET", "/api/v1/task/", {"id": ["task_demo"], "_type": ["lead"], "_fields": ["_type,id,lead_id,text"]}]
+    for delay, lookups, code in ((0, 1, 0), (0.5, 2, 0), (float("inf"), 3, 9)):
+        PolicyHandler.requests.clear()
+        PolicyHandler.task_first_lookup_at = None
+        PolicyHandler.task_visibility_delay = delay
+        observed = run("task", "create", "--data", json.dumps(body), "--confirm", code=code)
+        expected = {"id": "task_demo"} if code else {"id": "task_demo", **body}
+        assert observed == expected, observed
+        assert PolicyHandler.requests == [post] + [lookup] * lookups, PolicyHandler.requests
+        print(f"Pinned task verification: exit {code}, one POST, {lookups} list reads")
+    PolicyHandler.task_visibility_delay = 0
     PolicyHandler.requests.clear()
     assert run("task", "update", "task_sms", "--data", '{"text":"x"}', "--confirm", code=9) == {"id": "task_sms"}
     assert PolicyHandler.requests[-1] == ["GET", "/api/v1/task/", {"id": ["task_sms"], "_type": ["lead"], "_fields": ["id,text"]}]

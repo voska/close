@@ -113,9 +113,9 @@ means submitted/unverified or unknown outcome; inspect stdout plus the stderr
 error before retrying. On a mismatch stdout is the observed record. When
 read-back fails or is refused, or a create returns no usable ID, stdout is only
 the `id` from Close's write response, or `{}` if it has none, unverified.
-Under `message-content`, task writes may set `text`; they are read back through
-one `task` list request pinned to the written ID and `_type=lead`, and exit 9
-if that does not return exactly one task.
+Under `message-content`, task writes may set `text`. Verification reads the
+`task` list pinned to the written ID and `_type=lead` and requires exactly one
+task. An empty list after a create triggers up to two retries over five seconds.
 Successful deletion verifies
 an individual GET returning 404. Repeated deletion reports
 `deleted: false, already_absent: true` after verifying absence.
