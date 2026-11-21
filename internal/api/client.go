@@ -344,9 +344,24 @@ func (c *Client) Write(ctx context.Context, method, path string, body map[string
 	observed, err := c.Do(ctx, "GET", verifyPath, url.Values{"_fields": {projection}}, nil, true)
 	parts := strings.Split(strings.Trim(verifyPath, "/"), "/")
 	if errors.As(err, &e) && e.Code == 11 && parts[0] == "task" && fields["text"] {
-		observed, err = c.Do(ctx, "GET", "task/", url.Values{"id": {parts[len(parts)-1]}, "_type": {"lead"}, "_fields": {projection}}, nil, true)
+		query := url.Values{"id": {parts[len(parts)-1]}, "_type": {"lead"}, "_fields": {projection}}
+		var rows []any
+		// A new task can take a few seconds to appear in the list index.
+		for _, delay := range [...]time.Duration{0, time.Second, 4 * time.Second} {
+			if delay > 0 {
+				if err = c.Wait(ctx, delay); err != nil {
+					break
+				}
+			}
+			// Only the initial lookup uses the standard HTTP retry budget.
+			observed, err = c.Do(ctx, "GET", "task/", query, nil, delay == 0)
+			var ok bool
+			rows, ok = observed["data"].([]any)
+			if err != nil || !ok || len(rows) != 0 || method != "POST" {
+				break
+			}
+		}
 		if err == nil {
-			rows, _ := observed["data"].([]any)
 			observed = nil
 			if len(rows) == 1 {
 				observed, _ = rows[0].(map[string]any)

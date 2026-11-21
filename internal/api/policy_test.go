@@ -7,7 +7,9 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/voska/close/internal/errfmt"
 	"github.com/voska/close/internal/policy"
@@ -61,5 +63,39 @@ func TestPolicyRefusesFullReadbackFallback(t *testing.T) {
 				t.Fatalf("unverified echo exposed unsupplied fields: %v", v)
 			}
 		})
+	}
+}
+
+func TestLeadTaskIndexRetryStopsOnHTTPError(t *testing.T) {
+	var reads, writes atomic.Int32
+	c := fixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/task/" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method == http.MethodPost {
+			writes.Add(1)
+			_, _ = w.Write([]byte(`{"id":"task_demo"}`))
+			return
+		}
+		if reads.Add(1) == 2 {
+			_, _ = w.Write([]byte(`{"data":[]}`))
+			return
+		}
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	c.Policy = &policy.Policy{Version: 1, Deny: []string{"message-content"}}
+	var waits []time.Duration
+	c.Wait = func(_ context.Context, delay time.Duration) error {
+		waits = append(waits, delay)
+		return nil
+	}
+	got, err := c.Write(context.Background(), http.MethodPost, "task/", map[string]any{"text": "Call back"})
+	var e *errfmt.Error
+	if !errors.As(err, &e) || e.Code != 9 || !reflect.DeepEqual(got, map[string]any{"id": "task_demo"}) {
+		t.Fatalf("result=%v err=%v, want ID-only output and exit 9", got, err)
+	}
+	if reads.Load() != 3 || writes.Load() != 1 || !reflect.DeepEqual(waits, []time.Duration{30 * time.Second, time.Second}) {
+		t.Fatalf("reads=%d writes=%d waits=%v", reads.Load(), writes.Load(), waits)
 	}
 }

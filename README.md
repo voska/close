@@ -277,10 +277,12 @@ every `task.*` object; only `task.lead` may request `text`. Search conditions
 referencing `text` remain refused, even without an explicit object type.
 
 Task writes may set `text`. If policy refuses their normal individual
-verification read, the CLI makes one projected list read pinned to
-`id=<written-id>&_type=lead`, using the same sorted fields. It verifies the
-single returned row. Zero or multiple rows exit 9 with only the write ID;
-a failed pinned read never falls back to an unpinned read.
+verification read, the CLI reads the list pinned to
+`id=<written-id>&_type=lead`, using the same sorted fields. After a create,
+an empty list triggers up to two more reads after waits of one and four
+seconds. Verification requires exactly one row. An empty list after the
+final read or a list with multiple rows exits 9 with only the write ID.
+Every retry uses the same filters and fields.
 
 Leads embed tasks, so full lead reads and projections of `tasks` are refused.
 `close lead get lead_demo --api-fields id,name` remains allowed. Local
